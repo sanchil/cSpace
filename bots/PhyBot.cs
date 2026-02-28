@@ -162,6 +162,7 @@ namespace Phy.Bot
 
         protected override void OnBar()
         {
+            // A new random comment.
             InitIndData();
             _engine.SetIndData(_indData);
             onBarTask1();
