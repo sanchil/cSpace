@@ -1,5 +1,6 @@
 using System.Reflection.Metadata;
 using MathNet.Numerics.Statistics;
+using MathNet.Numerics.LinearAlgebra;
 
 namespace Phy.Lib;
 

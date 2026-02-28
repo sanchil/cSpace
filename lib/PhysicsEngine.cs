@@ -1,5 +1,9 @@
 ﻿using System;
 using System.Net.NetworkInformation;
+using MathNet.Numerics.Statistics;
+using MathNet.Numerics.LinearAlgebra;
+using MathNet.Numerics.LinearAlgebra.Double;
+
 
 namespace Phy.Lib;
 
@@ -92,10 +96,10 @@ public struct FEATURE_VECTOR
 {
 
     // Group A: Momentum & Velocity (The Drivers)
-    public double slopeIma5 { get; set;}
+    public double slopeIma5 { get; set; }
     public double slopeIma30 { get; set; }
     public double adxPlusMinusDiff { get; set; }
-    public double rsi { get; set;}
+    public double rsi { get; set; }
 
     // Group B: Volatility & Energy (The Fuel)
     public double atr { get; set; }
@@ -731,8 +735,8 @@ public class PhysicsEngine : IPhysicsEngine
         //double slopeIma30 = ss.imaSlope30Data.val2;
 
 
-        fV.slopeIma5 = _stats.GetDistribution(slopesArrIma5,0).zScore;
-        fV.slopeIma30 = _stats.GetDistribution(slopesArrIma30,0).zScore; 
+        fV.slopeIma5 = _stats.GetDistribution(slopesArrIma5, 0).zScore;
+        fV.slopeIma30 = _stats.GetDistribution(slopesArrIma30, 0).zScore;
         fV.adxPlusMinusDiff = (indData.AdxPlus[SHIFT] - indData.AdxMinus[SHIFT]) / 50.0;
         fV.rsi = (indData.Rsi[SHIFT] - 50) / 50;
 
@@ -741,8 +745,8 @@ public class PhysicsEngine : IPhysicsEngine
         fV.stdDevCP = indData.StdClose[SHIFT];
         fV.adx = (indData.Adx[SHIFT] / 100);
         fV.tVol = _stats.GetDistribution(indData.TickVolume, SHIFT).zScore;
-        
-       
+
+
         // Group C: Structure & Stretch (The Geometry)
         double[] pElastArr = new double[102];
         for (int i = 0; i < 100; i++)
@@ -763,6 +767,63 @@ public class PhysicsEngine : IPhysicsEngine
         fV.fMSR_Norm = indData.FMSR_Norm;
         fV.fractalAlignment = indData.FractalAlignment;
         return fV;
+    }
+
+    //+------------------------------------------------------------------+
+    //|                                                                  |
+    //+------------------------------------------------------------------+
+    public double marketIntensity(in FEATURE_VECTOR fV)
+    {
+
+        double[] cloud16D = new double[16]; // Declare the container
+
+        // Group A: Momentum
+        cloud16D[0] = fV.slopeIma5;
+        cloud16D[1] = fV.slopeIma30;
+        cloud16D[2] = fV.adxPlusMinusDiff;
+        cloud16D[3] = fV.rsi;
+
+        // Group B: Energy
+        cloud16D[4] = fV.atr;
+        cloud16D[5] = fV.stdDevCP;
+        cloud16D[6] = fV.adx;
+        cloud16D[7] = fV.tVol;
+
+        // Group C: Geometry
+        cloud16D[8] = fV.priceElasticity;
+        cloud16D[9] = fV.mfi;
+        cloud16D[10] = fV.vWCM;
+        cloud16D[11] = fV.expansionCompression;
+
+        // Group D: Super-Features
+        cloud16D[12] = fV.bayesianScore;
+        cloud16D[13] = fV.neuronScore;
+        cloud16D[14] = fV.fMSR_Norm;
+        cloud16D[15] = fV.fractalAlignment;
+
+        double globalIntensity = Vector<double>.Build.Dense(cloud16D).L2Norm();
+        //double globalIntensity = cloud16D.L2Norm();
+        return globalIntensity;
+    }
+    //+------------------------------------------------------------------+
+    //|                                                                  |
+    //+------------------------------------------------------------------+
+    double marketRegime(in FEATURE_VECTOR fV)
+    {
+
+        // --- 1. COORDINATE CALCULATION (The Position) ---
+        double posX = (fV.slopeIma5 + fV.slopeIma30 + fV.adxPlusMinusDiff + fV.rsi + fV.fractalAlignment);
+        double posY = (fV.atr + fV.stdDevCP + fV.adx + fV.tVol);
+        double posZ = (fV.priceElasticity + fV.mfi + fV.vWCM + fV.expansionCompression);
+
+        // 2. The 3D Projected Norm
+        double[] projection3D = new double[3];
+        projection3D[0] = posX; // These were already calculated as sums
+        projection3D[1] = posY;
+        projection3D[2] = posZ;
+        // System.Console.WriteLine("[ [MOMENTUM] - X:"+ posX:F2| [ENERGY] - Y: {posY:F2} | [STRUCTURE] - Z: {posZ:F2} ]");
+        double regimeMagnitude = Vector<double>.Build.Dense(projection3D).L2Norm();
+        return regimeMagnitude;
     }
 
 }
