@@ -31,6 +31,7 @@ namespace Phy.Bot
         private SimpleMovingAverage _ima120;
         private SimpleMovingAverage _ima240;
         private SimpleMovingAverage _ima500;
+        private SimpleMovingAverage _avgStdDev;
 
 
         public double[] GetHistory(Func<int, double> getPricePtr, int count, int shift = 1)
@@ -84,7 +85,12 @@ namespace Phy.Bot
                 Ima120 = GetHistory(idx => _ima120.Result[idx], 500),
                 Ima240 = GetHistory(idx => _ima240.Result[idx], 500),
                 Ima500 = GetHistory(idx => _ima500.Result[idx], 500),
+                AvgStd = GetHistory(idx => _avgStdDev.Result[idx], 500),
+                Point = Symbol.TickSize,
+                Digits = Symbol.Digits,
                 PipValue = Symbol.PipValue,
+                PipSize = Symbol.PipSize,
+                DBL_EPSILON = Symbol.TickSize * 0.1,
                 Current_Period = 60.0,
                 Shift = 0
             };
@@ -144,6 +150,7 @@ namespace Phy.Bot
             _ima120 = Indicators.SimpleMovingAverage(Bars.ClosePrices, 120);
             _ima240 = Indicators.SimpleMovingAverage(Bars.ClosePrices, 240);
             _ima500 = Indicators.SimpleMovingAverage(Bars.ClosePrices, 500);
+            _avgStdDev = Indicators.SimpleMovingAverage(_stdClose.Result, 40);
 
             InitIndData();
 
@@ -207,7 +214,7 @@ namespace Phy.Bot
                 {
                     _indData = _indData with { TradePosition = (pos.TradeType == TradeType.Buy) ? SIG.BUY : SIG.SELL, BarsHeld = GetBarAge(pos) };
                     _engine.SetIndData(_indData);
-                   // printData(_indData);
+                    // printData(_indData);
 
                     // Check if we need to close the position based on the new signal
                     if (pos.TradeType == TradeType.Buy && signal == SIG.SELL)

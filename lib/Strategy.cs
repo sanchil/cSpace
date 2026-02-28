@@ -35,6 +35,7 @@ public class Strategy : IStrategy
         _tacticalSignal = SIG.HOLD;
     }
 
+
     public SIG VolatilityMomentumSIG()
     {
         double strictness = 1.0; // Adjust this to make the strategy more or less aggressive
@@ -90,7 +91,25 @@ public class Strategy : IStrategy
         return signal;
     }
 
+    public SIG GetPhysicsSignal()
+    {
+        double velocity = _engine.GetVelocity(_engine.GetIndData().Ima30);
+        double acceleration = _engine.GetAcceleration(_engine.GetIndData().Ima30);
+        double zScore = _engine.GetMomentumZScore(_engine.GetIndData().Ima30);
 
+        // If velocity is high, acceleration is positive, and it's not a 'freak' move (Z < 2.0)
+        if (velocity > 0.5 && acceleration > 0 && zScore < 2.0)
+        {
+            return SIG.BUY;
+        }
 
+        // Mean Reversion: High velocity but negative acceleration at a high Z-score
+        if (zScore > 2.5 && acceleration < 0)
+        {
+            return SIG.SELL;
+        }
+
+        return SIG.HOLD;
+    }
 
 }
