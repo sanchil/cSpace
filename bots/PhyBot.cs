@@ -90,12 +90,26 @@ namespace Phy.Bot
                 Digits = Symbol.Digits,
                 PipValue = Symbol.PipValue,
                 PipSize = Symbol.PipSize,
-                DBL_EPSILON = Symbol.TickSize * 0.1,
-                Current_Period = 60.0,
+                DBL_EPSILON = (Symbol.TickSize * 0.1),
+                // cTrader .NET 6 standard way to get total minutes
+                _Period = GetMinutes(TimeFrame),
+                Current_Period = GetMinutes(TimeFrame),
                 Shift = 0
             };
         }
 
+        // Manual extraction for .NET 6 cTrader API
+        public int GetMinutes(TimeFrame tf)
+        {
+            if (tf == TimeFrame.Minute) return 1;
+            if (tf == TimeFrame.Minute5) return 5;
+            if (tf == TimeFrame.Minute15) return 15;
+            if (tf == TimeFrame.Hour) return 60;
+            if (tf == TimeFrame.Daily) return 1440;
+            // Fallback: parse the name (e.g., "m15" -> 15)
+            var match = System.Text.RegularExpressions.Regex.Match(tf.ToString(), @"\d+");
+            return match.Success ? int.Parse(match.Value) : 1;
+        }
         public void printData(in IndData data)
         {
             Print("=== IndData Snapshot ===");

@@ -50,6 +50,7 @@ public interface IPhysicsEngine
     public double getVolAdaptiveRetention();
     public double getHybridRetention(int barsHeld);
     public double getHybridRetention_v2(int barsHeld, double trendQualityScore = 0.0);
+    public double getPeakDecay(DECAY_STRATEGY strat = DECAY_STRATEGY.STRAT_ATR, double period = 14, int shift = 1);
 
     public double bayesianNextBarProb(bool volHigh, bool accelStrong);
     public FEATURE_VECTOR getFeatureVector(in IndData indData, in int SHIFT = 1);
@@ -86,7 +87,6 @@ public readonly record struct IndData
     public double[] Close { get; init; }
     public DateTime[] Time { get; init; }
     public double[] TickVolume { get; init; }
-
     // Indicators
     public double[] StdClose { get; init; }
     public double[] StdOpen { get; init; }
@@ -129,6 +129,7 @@ public readonly record struct IndData
     public double PipValue { get; init; }
 
     public double Point { get; init; }
+    public long _Period { get; init; }
     public double PipSize { get; init; }
 
     public double Current_Period { get; init; }
@@ -164,6 +165,14 @@ public struct FEATURE_VECTOR
     public double fMSR_Norm { get; set; }
     public double fractalAlignment { get; set; }
 
+};
+
+public enum DECAY_STRATEGY
+{
+    STRAT_ATR,       // Volatility fuel (your current)
+    STRAT_ADX,       // Trend quality
+    STRAT_ER,        // Efficiency
+    STRAT_MIX        // Weighted mix (0.5 ATR + 0.3 ADX + 0.2 ER)
 };
 
 public class PhysicsEngine : IPhysicsEngine
@@ -762,6 +771,69 @@ public class PhysicsEngine : IPhysicsEngine
         double trendBonus = 1.0 + (trendQualityScore * 0.35);   // 0.0 → 1.35x slower decay
 
         return timeRet * volRet * trendBonus;
+    }
+
+
+    //+------------------------------------------------------------------+
+    //| getPeakDecay — Unified Adaptive Peak Decay Calculator            |
+    //|                                                                  |
+    //| • Strategy-based: ATR, ADX, ER, or mix                           |
+    //| • Output: double 0.82–0.98 (tight to loose)                     |
+    //| • Use in signals: PEAK_DROP = getPeakDecay(STRAT_ATR, atr);     |
+    //+------------------------------------------------------------------+
+    public double getPeakDecay(DECAY_STRATEGY strat = DECAY_STRATEGY.STRAT_ATR, double period = 14, int shift = 1)
+    {
+        double baseDecay = 0.82;  // Min decay (tight in weak regimes)
+        double scale = 0.16; // Max addition (loose in strong regimes)
+        double norm = 0.0;   // Normalized strength (0–1)
+        double atr = _indData.Atr[SHIFT];
+        switch (strat)
+        {
+            case DECAY_STRATEGY.STRAT_ATR:
+                {
+                    // Your ATR norm (volatility fuel)
+
+                    double pipValue = _indData.PipSize;
+                    double atrPips = (pipValue > 0) ? atr / pipValue : 0.0;
+                    double tfScale = (_indData._Period > 1) ? Math.Log(_indData._Period) : 1.0;
+                    double atrCeiling = Math.Ceiling(12.0 * tfScale);
+                    norm = Math.Min(Math.Max(atrPips / atrCeiling, 0.0), 1.0);
+                    break;
+                }
+
+            case DECAY_STRATEGY.STRAT_ADX:
+                {
+                    // ADX norm (trend quality)
+                    double adx = _indData.Adx[SHIFT];
+                    norm = Math.Min(adx / 50.0, 1.0);  // 0–1 (ADX>50 rare)
+                    break;
+                }
+            //case STRAT_ER:
+            //  {
+            //   // ER norm (efficiency)
+            //   double net = MathAbs(close[shift] - close[shift + (int)period]);
+            //   double sumAbs = 0.0;
+            //   for(int i = shift; i < shift + (int)period; i++)
+            //      sumAbs += MathAbs(close[i] - close[i+1]);
+            //   norm = (sumAbs > 0) ? net / sumAbs : 0.0;
+            //   break;
+            //  }
+            case DECAY_STRATEGY.STRAT_MIX:
+                {
+                    // Weighted mix (0.5 ATR + 0.3 ADX + 0.2 ER)
+                    double atrNorm = getPeakDecay(DECAY_STRATEGY.STRAT_ATR, period, shift);
+                    double adxNorm = getPeakDecay(DECAY_STRATEGY.STRAT_ADX, period, shift);
+                    double erNorm = getPeakDecay(DECAY_STRATEGY.STRAT_ER, period, shift);
+                    norm = 0.5 * atrNorm + 0.3 * adxNorm + 0.2 * erNorm;
+                    break;
+                }
+        }
+
+        // Your square-root curve (looser in strong regimes)
+        double PEAK_DROP = baseDecay + scale * Math.Sqrt(norm);
+        PEAK_DROP = Math.Max(Math.Min(PEAK_DROP, 0.99), 0.70);  // Clamp
+
+        return PEAK_DROP;
     }
 
     //+------------------------------------------------------------------+
