@@ -11,7 +11,7 @@ namespace Phy.Bot
     {
         private IndData _indData;
         private PhysicsEngine _engine;
-        private Strategy _strategy;
+        private CSignal _signal;
 
         private Stats _stats;
         private Utils _utils;
@@ -157,7 +157,7 @@ namespace Phy.Bot
             _utils = new Utils();
             _stats = new Stats();
             _engine = new PhysicsEngine(_indData, _stats, _utils);
-            _strategy = new Strategy(_engine, _stats, _utils);
+            _signal = new CSignal(_engine, _stats, _utils);
 
         }
 
@@ -194,7 +194,7 @@ namespace Phy.Bot
         }
         void onBarTask1()
         {
-            SIG signal = _strategy.GetSignal();
+            SIG signal = _signal.GetSignal();
 
             Print($"SIG: {signal}");
 

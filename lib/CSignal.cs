@@ -13,13 +13,13 @@ public enum SIG
 }
 
 
-public interface IStrategy
+public interface ISignal
 {
     public SIG VolatilityMomentumSIG();
     public SIG GetSignal();
 
 }
-public class Strategy : IStrategy
+public class CSignal : ISignal
 {
     private PhysicsEngine _engine;
 
@@ -27,7 +27,7 @@ public class Strategy : IStrategy
     private Stats _stats;
     private Utils _utils;
 
-    public Strategy(PhysicsEngine engine, Stats stats, Utils utils)
+    public CSignal(PhysicsEngine engine, Stats stats, Utils utils)
     {
         _engine = engine;
         _stats = stats;
