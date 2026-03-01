@@ -17,18 +17,62 @@ public interface IBotEngine
 public interface IPhysicsEngine
 {
     public double atrKinetic();
+    public double adxKinetic(double scale = 50.0, int shift = 1);
     public double adxPotential(int period = 14);
     public double adxVector();
     public double VolatilityEfficiency();
-    public double efficiencyRatio(int period = 14);
+    public double efficiencyRatio(in double[] sig, int period = 14);
     public double vWCM_Raw(int N = 10);
     public double vWCM_Smooth(int N = 10);
     public double volatilityAnomaly();
     public bool isTrendAccelerating(in double[] sig, int shift = 1);
     public double trendAccelStrength(in double[] sig, int shift = 1);
+    public double trendQuality(in double[] sig, int period = 14);
+
     public double expansionCompressionRatio(in double fastS, in double slowS, in double SLOPEFLOOR = 0.3);
     public double springForce(double currentPrice, double smaValue);
     public double slopeAccelerationRatio(in double fSlope, in double mSlope, in double sSlope);
+    public double geometricFanScore(in double fastS, in double medS, in double slowS);
+
+
+    public double fractalAlignment(in double fastS, in double medS, in double slowS);
+    public double kinematicAcceleration(in double fastS, in double slowS, in double slopeFloor = 0.3);
+
+    public double overallMarketForce(int period);
+    public double layeredMomentumFilter(in double[] values, int N = 20);
+
+    public double GetVelocity(double[] sig, int period = 10);
+    public double GetAcceleration(double[] sig, int period = 10);
+    public double GetMomentumZScore(double[] sig, int period = 20);
+
+    public double getLinearTimeRetention(int barsHeld, double decayRate = 0.05, double floor = 0.60);
+
+    public double getVolAdaptiveRetention();
+    public double getHybridRetention(int barsHeld);
+    public double getHybridRetention_v2(int barsHeld, double trendQualityScore = 0.0);
+
+    public double bayesianNextBarProb(bool volHigh, bool accelStrong);
+    public FEATURE_VECTOR getFeatureVector(in IndData indData, in int SHIFT = 1);
+
+    public double marketIntensity(in FEATURE_VECTOR fV);
+    public double marketRegime(in FEATURE_VECTOR fV);
+    public double neuronHoldScore(
+       in double[] maArray, in double[] closeArray, in double[] openArray, in double[] volumeArray,
+       int barsHeld, double atr, bool useOverallForce = true);
+    public double bayesianHoldScore(
+   in double[] maArray,
+   in double[] closeArray,
+   in double[] openArray,
+   in double[] volumeArray,
+   int barsHeld,
+   double atr,
+   bool useOverallForce = true
+   );
+
+    public int getHyperbolicCombinedScore(double b, double n, double f, double fra);
+    public int getCobbDouglasCombinedScore(double b, double n, double f, double fra);
+
+
 
 }
 
@@ -275,12 +319,12 @@ public class PhysicsEngine : IPhysicsEngine
         // return SIG.HOLD;
     }
 
-    public double efficiencyRatio(int period = 14)
+    public double efficiencyRatio(in double[] sig, int period = 14)
     {
-        double net = Math.Abs(_indData.Close[SHIFT] - _indData.Close[SHIFT + period]);
+        double net = Math.Abs(sig[SHIFT] - sig[SHIFT + period]);
         double sumAbs = 0.0;
         for (int i = SHIFT; i < SHIFT + period; i++)
-            sumAbs += Math.Abs(_indData.Close[i] - _indData.Close[i + 1]);
+            sumAbs += Math.Abs(sig[i] - sig[i + 1]);
         return (sumAbs > 0) ? net / sumAbs : 0.0;
     }
 
@@ -310,7 +354,7 @@ public class PhysicsEngine : IPhysicsEngine
         double pipVal = _indData.PipSize;
         for (int i = SHIFT; i < N + SHIFT; i++)
         {
-            double body_pips = (_indData.Close[i] - _indData.Close[i]) / pipVal;
+            double body_pips = (_indData.Close[i] - _indData.Open[i]) / pipVal;
             sum_force += body_pips * _indData.TickVolume[i];
             total_vol += _indData.TickVolume[i];
         }
@@ -319,6 +363,13 @@ public class PhysicsEngine : IPhysicsEngine
             return _indData.DBL_EPSILON;
         double raw = sum_force / total_vol;
         return Math.Tanh(raw / 10.0);
+    }
+
+    public double adxKinetic(double scale = 50.0, int shift = 1)
+    {
+        double adx = _indData.Adx[SHIFT];
+        double normAdx = Math.Min(adx / scale, 1.0);
+        return (normAdx * normAdx);
     }
 
     // 3. adxVector (The Compass)
@@ -416,6 +467,20 @@ public class PhysicsEngine : IPhysicsEngine
         return Math.Tanh(rel_accel);
     }
 
+    public double trendQuality(in double[] sig, int period = 14)
+    {
+        // 1. Get the Force (0-1)
+        double force = adxKinetic(50.0, period);
+
+        // 2. Get the Smoothness (0-1)
+        double smooth = efficiencyRatio(sig, period);
+
+        // 3. Combine
+        // We multiply them because we need BOTH to be good.
+        // If Force is high (1.0) but Smoothness is low (0.2), result is 0.2 (Bad).
+        // If Smoothness is high (1.0) but Force is dead (0.1), result is 0.1 (Bad).
+        return force * smooth;
+    }
     //+------------------------------------------------------------------+
     //|                                                                  |
     //+------------------------------------------------------------------+
@@ -514,7 +579,7 @@ public class PhysicsEngine : IPhysicsEngine
     //+------------------------------------------------------------------+
     //| FRACTAL ALIGNMENT: Grades the harmony of the moving averages     |
     //+------------------------------------------------------------------+
-    double fractalAlignment(in double fastS, in double medS, in double slowS)
+    public double fractalAlignment(in double fastS, in double medS, in double slowS)
     {
         // Normalize the directions to simple +1 (Up), -1 (Down), or 0 (Flat)
         // We use a microscopic threshold (0.01) to ignore completely flat MA noise
@@ -551,7 +616,7 @@ public class PhysicsEngine : IPhysicsEngine
     //+------------------------------------------------------------------+
     //| KINEMATIC ACCELERATION: Measures Trend Expansion vs Compression  |
     //+------------------------------------------------------------------+
-    double kinematicAcceleration(in double fastS, in double slowS, in double slopeFloor = 0.3)
+    public double kinematicAcceleration(in double fastS, in double slowS, in double slopeFloor = 0.3)
     {
         // 1. DIRECTIONAL HARMONY
         // If they are pointing in opposite directions, it's a mess. Ratio is 0.
@@ -569,7 +634,7 @@ public class PhysicsEngine : IPhysicsEngine
         return (absFast / absSlow);
     }
 
-    double overallMarketForce(int period)
+    public double overallMarketForce(int period)
     {
         // Ensure we use SHIFT = 1 to match MQL4's 'last closed bar' logic
         int S = 1;
@@ -716,7 +781,7 @@ public class PhysicsEngine : IPhysicsEngine
     //+------------------------------------------------------------------+
     //|                                                                  |
     //+------------------------------------------------------------------+
-    FEATURE_VECTOR getFeatureVector(in IndData indData, in int SHIFT = 1)
+    public FEATURE_VECTOR getFeatureVector(in IndData indData, in int SHIFT = 1)
     {
         FEATURE_VECTOR fV = new FEATURE_VECTOR();
 
@@ -808,7 +873,7 @@ public class PhysicsEngine : IPhysicsEngine
     //+------------------------------------------------------------------+
     //|                                                                  |
     //+------------------------------------------------------------------+
-    double marketRegime(in FEATURE_VECTOR fV)
+    public double marketRegime(in FEATURE_VECTOR fV)
     {
 
         // --- 1. COORDINATE CALCULATION (The Position) ---
@@ -824,6 +889,256 @@ public class PhysicsEngine : IPhysicsEngine
         // System.Console.WriteLine("[ [MOMENTUM] - X:"+ posX:F2| [ENERGY] - Y: {posY:F2} | [STRUCTURE] - Z: {posZ:F2} ]");
         double regimeMagnitude = Vector<double>.Build.Dense(projection3D).L2Norm();
         return regimeMagnitude;
+    }
+
+
+    //+------------------------------------------------------------------+
+    //|                                                                  |
+    //+------------------------------------------------------------------+
+    public double bayesianHoldScore(
+   in double[] maArray, in double[] closeArray, in double[] openArray, in double[] volumeArray,
+   int barsHeld, double atr, bool useOverallForce = true)
+    {
+        // 1. Gather Atoms
+        double tq = trendQuality(maArray);
+
+        // OLD (Bullish only)
+        // bool accelStrong = (trendAccelStrength(maArray) > 0.42);
+
+        // 2. Fix Acceleration Directionality
+        // OLD: bool accelStrong = (trendAccelStrength(...) > 0.42);
+        // NEW: Check Magnitude.
+        bool accelStrong = (Math.Abs(trendAccelStrength(maArray, SHIFT)) > 0.10);
+
+        double volRaw = vWCM_Raw(10);
+        // 1. Fix Volume Directionality
+        // OLD: bool volHigh = (volRaw > 0.35);  <-- Fails on Sells
+        // NEW: Check Magnitude. Also lowered threshold slightly for M15.
+        bool volHigh = (Math.Abs(volRaw) > 0.15);
+
+
+        double anomaly = volatilityAnomaly();
+        // Soft anomaly penalty: Only punish if > 1.5 (extreme shock)
+        double anomalyMultiplier = (anomaly > 1.5) ? 0.7 : 1.0;
+
+        double regimeMultiplier = 1.0;
+        if (useOverallForce)
+        {
+            double omf = overallMarketForce(14);
+            regimeMultiplier = (omf > 0.35) ? 1.2 : (omf < -0.35 ? 0.8 : 1.0);
+        }
+
+        // 2. Likelihood Ratios (Evidence Weight)
+        // LR = 1.0 (Neutral)
+        double lr = 1.0;
+        // Trend Quality: The strongest predictor
+        // Adjusted Likelihood Ratios in bayesianHoldScore
+        // Trend Quality Logic
+        if (tq > 0.20)
+            lr *= 2.0; // Unicorn
+        else if (tq > 0.12)
+            lr *= 1.2; // <-- ADD THIS: The "Grinder" Boost. (0.16 falls here now)
+        else if (tq < 0.08)
+            lr *= 0.4; // Swamp
+        else
+            lr *= 0.9; // Weak Drift
+
+        // Acceleration: Good for short term
+        lr *= (accelStrong ? 1.4 : 0.8);
+
+        // Volume: Confirmation
+        lr *= (volHigh ? 1.2 : 0.9);
+
+        // Penalties
+        lr *= anomalyMultiplier;
+        lr *= regimeMultiplier;
+
+        // 3. Time Decay (The Prior eroding over time)
+        // We reduce the LR effective power by 2% per bar
+        double timeDecay = Math.Max(0.2, 1.0 - (barsHeld * 0.02));
+        lr *= timeDecay;
+
+        // 4. Probability Conversion (Sigmoid-like via Odds)
+        // P = Odds / (1 + Odds)
+
+        //Print("Bayesian Hold | AccelRaw=", DoubleToStr(trendAccelStrength(maArray,atr), 4),
+        //      " | TQRaw=", DoubleToStr(tq, 4),
+        //      " | VolRaw=", DoubleToStr(volRaw, 4));
+
+        return lr / (1.0 + lr);
+    }
+
+
+
+
+    //+------------------------------------------------------------------+
+    //| NEURON HOLD SCORE — ALIGNED WITH CONTINUOUS fMSR                |
+    //| FIX: Uses closed bars [1], continuous fMSR, and rewards volume  |
+    //| intensity correctly.                                            |
+    //+------------------------------------------------------------------+
+    public double neuronHoldScore(
+       in double[] maArray, in double[] closeArray, in double[] openArray, in double[] volumeArray,
+       int barsHeld, double atr, bool useOverallForce = true)
+    {
+        double tq = trendQuality(maArray);
+
+        // 1. Universal Acceleration (Magnitude)
+        bool accelStrong = (Math.Abs(trendAccelStrength(maArray)) > 0.18);
+
+        // 2. Universal Volume (Magnitude) — your good fix
+        double volRaw = vWCM_Raw(10);
+        bool volHigh = (Math.Abs(volRaw) > 0.15);
+
+        double bayesP = bayesianNextBarProb(volHigh, accelStrong);
+        double retention = getHybridRetention_v2(barsHeld, tq);
+        double anomaly = volatilityAnomaly();
+        double anomalyFactor = (anomaly > 1.0) ? Math.Max(0.82, 1.0 - (anomaly - 1.0) * 0.22) : 1.0;
+
+        double regimeBias = 1.0;
+        if (useOverallForce)
+        {
+            double omf = overallMarketForce(14);
+            regimeBias = (omf > 0.35) ? 1.15 : (omf < -0.35 ? 0.75 : 1.0);
+        }
+
+        // === CONTINUOUS fMSR (Aligned with RefreshPhysicsData) ===
+        // Use closed bar [1] to avoid repainting on M15 USDJPY
+        double pipVal = _indData.PipSize;
+        double fastSlope = (maArray[1] - maArray[4]) / (3 * pipVal);
+        double medSlope = (maArray[1] - maArray[11]) / (10 * pipVal);
+        double slowSlope = (maArray[1] - maArray[31]) / (30 * pipVal);  // consistent with RefreshPhysicsData
+
+        double fMSR_raw = slopeAccelerationRatio(fastSlope, medSlope, slowSlope);
+        double abs_fMSR = Math.Abs(fMSR_raw); // <-- ADD THIS
+                                              // Continuous linear version — Option 1 (smooth 0.0 → 1.0)
+                                              //   double fMSR_norm = MathMax(0.0, MathMin(1.0, (fMSR_raw - 0.5) / 1.5));
+        double fMSR_norm = 0.0;
+        // Bimodal Activation (U-Shape)
+        if (abs_fMSR >= 0.40)
+        {
+            // Perfect Expansion
+            fMSR_norm = 1.0;
+        }
+        else if (abs_fMSR <= 0.15)
+        {
+            // Perfect Compression (Energy Storage)
+            // We give the Neural Network full points because a squeeze is a highly valid setup!
+            fMSR_norm = 1.0;
+        }
+        else
+        {
+            // The Toxic No-Go Zone
+            // Penalize the Neural score so it doesn't fire in choppy markets
+            fMSR_norm = 0.0;
+        }
+
+        // ===============================================
+        // SCORE COMBINATION
+        // ===============================================
+        double score = 0.0;
+
+        score += tq * 0.40;
+        score += bayesP * 0.25;
+        score += (retention - 0.7) / 0.7 * 0.12;
+        score += anomalyFactor * 0.10;
+        score += (regimeBias - 0.9) * 0.08;
+        score += fMSR_norm * 0.15;          // ← Now active and continuous
+        score += Math.Abs(volRaw) * 0.10;    // Your Sell Volume Intensity fix
+
+        // Sigmoid squash (smooth 0.0–1.0 output)
+        score = 1.0 / (1.0 + Math.Exp(-10.0 * (score - 0.5)));
+
+        return Math.Max(Math.Min(score, 1.0), 0.0);
+    }
+
+
+    //+------------------------------------------------------------------+
+    //| THE HYPERBOLIC MAP (Bimodal Squeeze Authorization)               |
+    //+------------------------------------------------------------------+
+    public int getHyperbolicCombinedScore(double b, double n, double f, double fra)
+    {
+
+        const double TRADE_EXPANSION = 0.40;
+        const double TRADE_COMPRESSION = 0.15;
+
+        double absF = Math.Abs(f);
+
+        // 1. THE GUARD CLAUSE (No-Go Zone)
+        if ((absF > TRADE_COMPRESSION) && (absF < TRADE_EXPANSION)) return 0;
+
+        // --- PHASE 1: EXPANSION (The Trend) ---
+        if (absF >= TRADE_EXPANSION)
+        {
+            // Additive structure: We add probabilities AND fractal alignment
+            double combined = (b * 1.5) + (n * 1.2) + (fra * 1.0);
+
+            // We subtract an offset (e.g., 2.0) so the tanh only goes positive
+            // if the combined score is extremely high.
+            double score = Math.Tanh(combined - 2.0);
+
+            if (score > 0.20) return 1;   // Authorize
+            if (score < -0.20) return -1; // Veto
+            return 0;
+        }
+
+        // --- PHASE 2: COMPRESSION (The Squeeze) ---
+        else if (absF <= TRADE_COMPRESSION)
+        {
+            // Ignore Fractals. We boost the weight of the Smart Money probabilities (b & n)
+            double combined = (b * 1.8) + (n * 1.5);
+
+            double score = Math.Tanh(combined - 1.8);
+
+            // We require a slightly higher tanh output to authorize a squeeze in the dark
+            if (score > 0.30) return 1;  // Authorize Vanguard Snipe
+            if (score < -0.30) return -1; // Veto toxic compression
+            return 0;
+        }
+
+        return 0;
+    }
+
+    //+------------------------------------------------------------------+
+    //| THE COBB-DOUGLAS MAP (Dual-Phase Squeeze Authorization)          |
+    //+------------------------------------------------------------------+
+    public int getCobbDouglasCombinedScore(double b, double n, double f, double fra)
+    {
+
+        // 1. MUST BE DOUBLE.
+        const double TRADE_EXPANSION = 0.4;
+        // Allow for standard M15 MA noise to be classified as a squeeze
+        const double TRADE_COMPRESSION = 0.15;
+
+        // 2. SAFEGUARD NEGATIVE TRENDS
+        double absF = Math.Abs(f);
+
+        // 3. THE GUARD CLAUSE (No-Go Zone)
+        if ((absF > TRADE_COMPRESSION) && (absF < TRADE_EXPANSION)) return 0;
+
+        // --- PHASE 1: EXPANSION (The Trend) ---
+        if (absF >= TRADE_EXPANSION)
+        {
+            double trendConf = Math.Pow(n + 0.01, 1.2) * Math.Pow(b + 0.01, 1.5) * (fra + 0.01);
+
+            if (trendConf > 0.20) return 1;
+            if (trendConf < 0.05) return -1;
+            return 0;
+        }
+
+        // --- PHASE 2: COMPRESSION (The Squeeze) ---
+        else if (absF <= TRADE_COMPRESSION)
+        {
+            double squeezeConf = Math.Pow(n + 0.01, 1.2) * Math.Pow(b + 0.01, 1.5);
+
+            if (squeezeConf > 0.35)
+            {
+                return 1;
+            }
+            if (squeezeConf < 0.15) return -1;
+            return 0;
+        }
+
+        return 0;
     }
 
 }
