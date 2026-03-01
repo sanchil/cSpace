@@ -13,8 +13,8 @@ namespace Phy.Bot
         private PhysicsEngine _engine;
         private CSignal _signal;
 
-        private Stats _stats;
-        private Utils _utils;
+        private CStats _stats;
+        private CUtils _utils;
 
         // Results objects for indicators
         private StandardDeviation _stdClose;
@@ -168,8 +168,8 @@ namespace Phy.Bot
 
             InitIndData();
 
-            _utils = new Utils();
-            _stats = new Stats();
+            _utils = new CUtils();
+            _stats = new CStats();
             _engine = new PhysicsEngine(_indData, _stats, _utils);
             _signal = new CSignal(_engine, _stats, _utils);
 

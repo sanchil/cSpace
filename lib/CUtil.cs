@@ -4,7 +4,7 @@ public interface IUtils
 {
     
 }
-public class Utils : IUtils
+public class CUtils : IUtils
 {
     
 

@@ -2,35 +2,16 @@ using System;
 using System.Security.AccessControl;
 namespace Phy.Lib;
 
-public enum SIG
-{
-    HOLD = 101,   // 0
-    BUY = 102,    // 1
-    SELL = 103,   // 2
-    CLOSE = 104, // 3
-    TRADE = 105,// 4
-    NOTRADE = 106,
-    NOSIG = 107 // 5
-
-}
-
-public struct DTYPE
-{
-    public double val1;
-    public double val2;
-    public double val3;
-    public double val4;
-    public double val5;
-};
-
 public interface ISignal
 {
     public SIG GetPhysicsSignal();
     public SIG VolatilityMomentumSIG();
     public SIG GetSignal();
-    public SIG TradeSlopeSIG(in DTYPE fast, in DTYPE slow,int magicnumber = -1);
-    
-    
+    public SIG TradeSlopeSIG(in DTYPE fast, in DTYPE slow, int magicnumber = -1);
+    public SIG TradeSlopeSIG_Static(in DTYPE fast, in DTYPE slow, int magicnumber = -1);
+    public SIG waveTideSIG(in DTYPE fast, in DTYPE med, in DTYPE slow);
+
+
 
 
 }
@@ -39,8 +20,8 @@ public class CSignal : ISignal
     private PhysicsEngine _engine;
 
     private SIG _tacticalSignal;
-    private Stats _stats;
-    private Utils _utils;
+    private CStats _stats;
+    private CUtils _utils;
 
     private static readonly double[] closeRVal = { 1.3, 1.2, 1.1, 1.0, 0.9 };
     private double m_peakRatio;  // class member
@@ -48,7 +29,7 @@ public class CSignal : ISignal
     private SIG m_cached;
 
 
-    public CSignal(PhysicsEngine engine, Stats stats, Utils utils)
+    public CSignal(PhysicsEngine engine, CStats stats, CUtils utils)
     {
         _engine = engine;
         _stats = stats;
@@ -134,7 +115,7 @@ public class CSignal : ISignal
     }
 
 
-    public SIG TradeSlopeSIG(in DTYPE fast, in DTYPE slow,int magicnumber = -1)
+    public SIG TradeSlopeSIG(in DTYPE fast, in DTYPE slow, int magicnumber = -1)
     {
 
         // --- 1. BAR OPENING CHECK (Fixed State Management) ---
@@ -172,7 +153,8 @@ public class CSignal : ISignal
         // .NET 8 optimized: The compiler handles the safety and performance automatically
         // ReadOnlySpan<double> closeRVal = [1.3, 1.2, 1.1, 1.0, 0.9];
         // This lives in memory once and never moves. Very fast.
-        double CLOSERATIO = closeRVal[regimeIdx];
+        ReadOnlySpan<double> closeRatios = closeRVal;
+        double CLOSERATIO = closeRatios[regimeIdx];
 
         double PEAK_DROP = _engine.getVolAdaptiveRetention();
         PEAK_DROP = Math.Max(Math.Min(PEAK_DROP, 0.99), 0.70); // Hard clamp
@@ -255,4 +237,196 @@ public class CSignal : ISignal
         return SIG.NOSIG;
     }
 
+    public SIG TradeSlopeSIG_Static(in DTYPE fast, in DTYPE slow, int magicnumber = -1)
+    {
+
+        IndData indData = _engine.GetIndData();
+        double atr = indData.Atr[indData.Shift];
+        double floor = atr * 0.30;
+
+        double fS = fast.val1;
+        double sS = slow.val1;
+        double absSlow = Math.Abs(sS);
+
+
+        SIG dir = (sS > 0) ? SIG.BUY : SIG.SELL;
+        //const double SLOPERANGELIMIT = 0.3;
+
+        // 1. CALL THE PHYSICS ENGINE
+        // This one call handles Directional Alignment AND the Structural Floor.
+        //double mScore = ms.slopeRatio(fS, sS, SLOPERANGELIMIT);
+        // To this:
+        double mScore = _engine.expansionCompressionRatio(fS, sS, floor);
+
+
+        // 2. THE LEAN POLICY
+        // If mScore is 1.0, the Metric has already verified Direction, Floor, and Expansion.
+        if (mScore >= 1.0) return dir;
+
+        // For Case B (Compression), we check for the "Power Trend" extra requirement.
+        if (mScore >= 0.8 && absSlow >= (floor * 1.5)) return dir;
+
+        if (mScore == 0) return SIG.CLOSE;
+
+        // If the Metric returned 0.0 (Veto) or a weak ratio, we bail.
+        return SIG.CLOSE;
+    }
+
+    public SIG microWaveSIG(in DTYPE fast, in DTYPE med)
+    {
+
+        // 1. THE MICRO-FLOOR (Aggressive)
+        // We lower the barrier to entry. We only need 10% of ATR to consider it "Active."
+        IndData indData = _engine.GetIndData();
+        double atr = indData.Atr[indData.Shift];
+
+        double MICRO_FLOOR = atr * 0.10;
+
+        double fS = fast.val1;
+        double mS = med.val1;
+        SIG dir = (fS > 0) ? SIG.BUY : SIG.SELL;
+
+        // 2. THE VELOCITY CHECK (The "Explosion" Gate)
+        // We use slopeRatio but we pass our lower MICRO_FLOOR.
+        // We want to see the Wave pulling away from the Current.
+        double vScore = _engine.expansionCompressionRatio(fS, mS, MICRO_FLOOR);
+
+        // 3. THE MICRO-POLICY
+        // We ONLY enter if the expansion is nearly perfect (>= 0.95)
+        // This ensures we are catching the "Meat" of the micro-move.
+        if (vScore >= 0.95)
+        {
+            return dir;
+        }
+
+        // 4. THE LIGHTNING EXIT
+        // If the velocity score drops even slightly (e.g., below 0.70),
+        // we BAIL. There is no macro structure to save us here.
+        if (vScore < 0.70) return SIG.CLOSE;
+
+        return SIG.NOSIG;
+    }
+
+    //+------------------------------------------------------------------+
+    //|                                                                  |
+    //+------------------------------------------------------------------+
+    public SIG waveTideSIG(in DTYPE fast, in DTYPE med, in DTYPE slow)
+    {
+
+        // THE TRIPLE-GEOMETRY CHAIN
+        SIG waveSignal = TradeSlopeSIG_Static(fast, med);  // Micro-Expansion
+        SIG tideSignal = TradeSlopeSIG_Static(med, slow);  // Macro-Expansion
+
+        if (waveSignal == SIG.BUY && tideSignal == SIG.BUY) return SIG.BUY;
+        if (waveSignal == SIG.SELL && tideSignal == SIG.SELL) return SIG.SELL;
+        return SIG.NOSIG;
+    }
+
+    //+------------------------------------------------------------------+
+    //|                                                                  |
+    //+------------------------------------------------------------------+
+    public SIG SlopeAnalyzerSIG(in DTYPE slope)
+    {
+        SlopeAnalyzer analyzer = new SlopeAnalyzer(_engine);
+        return analyzer.Analyze(slope.val1);
+    }
+
+    //+------------------------------------------------------------------+
+    //| Layered Filter: ADX → Histogram for Momentum Strength            |
+    //+------------------------------------------------------------------+
+    SIG LayeredMomentumSIG(in double[] signal, int N = 20)
+    {
+
+        double gate = _engine.layeredMomentumFilter(signal, N);
+        if (gate == 0)
+            return SIG.NOSIG;
+        if (gate == 1)
+            return SIG.BUY;
+        if (gate == -1)
+            return SIG.SELL;
+        return SIG.NOSIG;
+    }
+
+}
+
+
+class SlopeAnalyzer
+{
+    // --- 1. State Memory (Moved from Function-Static to Class-Fields) ---
+    // These replace 'static double peakPositive = 0;'
+    private double _peakPositive = 0;
+    private double _peakNegative = 0;
+    private SIG _currentIdx = SIG.NOTRADE;
+
+    private readonly IPhysicsEngine _engine;
+
+    public SlopeAnalyzer(IPhysicsEngine engine)
+    {
+        _engine = engine;
+    }
+
+    public SIG Analyze(double slopeValue)
+    {
+        // Constants
+        const double BASE_DECAY = 0.8;
+        const double MIN_SLOPE = 0.2;
+        const double HYSTERESIS = 0.90;
+
+        double s = slopeValue;
+
+        // 2. Adaptive Logic (Using your ported Physics Engine)
+        double adxNorm = _engine.adxKinetic();
+        double adaptedDecay = BASE_DECAY + (0.18 * adxNorm);
+
+        // --- LOGIC GATE ---
+
+        // A. RESET LOGIC
+        if (s < -MIN_SLOPE) _peakPositive = 0;
+        if (s > MIN_SLOPE) _peakNegative = 0;
+
+        // B. BUY LOGIC
+        double buyThreshold = (_peakPositive > 0) ? (_peakPositive * adaptedDecay) : MIN_SLOPE;
+
+        if (s > buyThreshold)
+        {
+            _peakPositive = Math.Max(_peakPositive, s);
+            _currentIdx = SIG.BUY;
+            return SIG.BUY;
+        }
+
+        // C. SELL LOGIC
+        double sellThreshold = (_peakNegative < 0) ? (_peakNegative * adaptedDecay) : -MIN_SLOPE;
+
+        if (s < sellThreshold)
+        {
+            _peakNegative = Math.Min(_peakNegative, s);
+            _currentIdx = SIG.SELL;
+            return SIG.SELL;
+        }
+
+        // D. EXIT LOGIC with HYSTERESIS
+        if (_currentIdx == SIG.BUY)
+        {
+            double exitLevel = (_peakPositive * adaptedDecay) * HYSTERESIS;
+            if (s < exitLevel)
+            {
+                _currentIdx = SIG.NOTRADE;
+                return SIG.CLOSE;
+            }
+            return SIG.BUY; // HOLD
+        }
+
+        if (_currentIdx == SIG.SELL)
+        {
+            double exitLevel = (_peakNegative * adaptedDecay) * HYSTERESIS;
+            if (s > exitLevel)
+            {
+                _currentIdx = SIG.NOTRADE;
+                return SIG.CLOSE;
+            }
+            return SIG.SELL; // HOLD
+        }
+
+        return SIG.NOTRADE;
+    }
 }

@@ -24,7 +24,7 @@ public interface IStats
 
 }
 
-public class Stats : IStats
+public class CStats : IStats
 {
 
     // Implementation of GetDistribution
