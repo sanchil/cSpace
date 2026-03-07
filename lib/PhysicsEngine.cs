@@ -1078,7 +1078,7 @@ public class PhysicsEngine : IPhysicsEngine
     {
 
         // 1. MUST BE DOUBLE.
-        const double TRADE_EXPANSION = 0.4;
+        const double TRADE_EXPANSION = 0.25;
         // Allow for standard M15 MA noise to be classified as a squeeze
         const double TRADE_COMPRESSION = 0.15;
 
@@ -1093,8 +1093,8 @@ public class PhysicsEngine : IPhysicsEngine
         {
             double trendConf = Math.Pow(n + 0.01, 1.2) * Math.Pow(b + 0.01, 1.5) * (fra + 0.01);
 
-            if (trendConf > 0.20) return 1;
-            if (trendConf < 0.05) return -1;
+            if (trendConf > 0.12) return 1;
+            if (trendConf < 0.04) return -1;
             return 0;
         }
 

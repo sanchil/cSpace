@@ -218,7 +218,7 @@ namespace Phy.Bot
 
             int allPositions = Positions.Count;
 
-            // Count ONLY positions opened by this bot (using your "PhyLabel")
+            // Count OcNLY positions opened by this bot (using your "PhyLabel")
             var botPositions = Positions.FindAll(label, SymbolName);
             int activeTradesCount = botPositions.Length;
             //################## CLOSE LOGIC ##################
