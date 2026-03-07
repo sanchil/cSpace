@@ -16,6 +16,9 @@ public interface IBotEngine
 
 public interface IPhysicsEngine
 {
+    public IndData GetIndData();
+    public void SetIndData(IndData data);
+
     public double atrKinetic();
     public double adxKinetic(double scale = 50.0, int shift = 1);
     public double adxPotential(int period = 14);

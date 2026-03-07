@@ -147,6 +147,21 @@ namespace Phy.Bot
                 Print($"Latest MFI: {data.Mfi[0]}");
         }
 
+        public bool HasTradedCurrentBarIncludingHistory(long magicNumber, Positions pos, History hist)
+        {
+            DateTime currentBarStartTime = Bars.OpenTimes.LastValue;
+            string label = magicNumber.ToString();
+
+            // Check active positions
+            bool activeExists = pos.Any(p => p.Label == label && p.EntryTime >= currentBarStartTime);
+            if (activeExists) return true;
+
+            // Check closed positions in history
+            bool historyExists = hist.Any(h => h.Label == label && h.EntryTime >= currentBarStartTime);
+
+            return historyExists;
+        }
+
         protected override void OnStart()
         {
             Print("Phy.Bot initialized. Connecting to Physics Engine...");

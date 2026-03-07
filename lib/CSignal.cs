@@ -347,7 +347,128 @@ public class CSignal : ISignal
         return SIG.NOSIG;
     }
 
+
+    //+------------------------------------------------------------------+
+    //|                                                                  |
+    //+------------------------------------------------------------------+
+    SIG CandleVolSIG(
+            in double[] open,
+            in double[] close,
+            in double[] volume,
+            in double atr,
+            int period = 30,
+            int SHIFT = 1
+            )
+    {
+
+        IndData indData = _engine.GetIndData();
+        double atr_pips = atr / indData.Point;
+
+        double atr_floor = atr_pips * 0.05;
+
+        // 1. DYNAMIC WINDOWS (Guaranteed to be distinct)
+        //int fast_n = (int)(period * 0.5);
+        int fast_n = Math.Max(5, (int)(period * 0.4));  // 40% instead of 50% — faster response
+
+        if (fast_n < 5) fast_n = 5; // Minimum 5 candles to avoid noise
+
+        // 2. RAW KINEMATICS
+        double slow = _engine.vWCM_Raw(10);
+        double fast = _engine.vWCM_Raw(10);
+
+        if (Math.Abs(slow) < atr_floor) return SIG.NOSIG;  // veto very flat volume
+
+
+        // 3. DIRECTIONAL AGREEMENT
+        bool agree_dir = (slow > 0 && fast > 0) || (slow < 0 && fast < 0);
+
+        // 4. MOMENTUM RATIO (Fast must maintain at least 75% of Slow's power)
+        // We use MathAbs to safely compare the force regardless of direction
+        //bool agree_str = (MathAbs(fast) / (MathAbs(slow) + DBL_EPSILON)) > 0.75;
+        bool agree_str = (Math.Abs(fast) / (Math.Abs(slow) + indData.DBL_EPSILON)) > 0.6;
+
+        // 5. THE VERDICT
+        SIG sig = SIG.NOSIG;
+        if (agree_dir && agree_str)
+        {
+            sig = (slow > 0) ? SIG.BUY : SIG.SELL;
+        }
+
+        // [Optional Debugging Log]
+        // PrintFormat("vWCM | Slow:%.4f Fast:%.4f → %s", slow, fast, util.getSigString(sig));
+
+        return sig;
+    }
+
 }
+
+
+
+//+------------------------------------------------------------------+
+//| singleCandleVolSIG - Final, bulletproof version                     |
+//+------------------------------------------------------------------+
+
+class SingleCandleVolSIG
+{
+    private readonly IPhysicsEngine _engine;
+
+    private DateTime last_bar;
+    private SIG cached;
+
+    public SingleCandleVolSIG(IPhysicsEngine eng)
+    {
+        _engine = eng;
+        last_bar = DateTime.MinValue;;
+        cached = SIG.NOSIG;
+    }
+    public SIG Analyze(
+       in double[] open,
+       in double[] close,
+       in double[] volume,
+       in double atr,
+       int period = 30,
+       int SHIFT = 1
+       )
+    {
+        IndData indData = _engine.GetIndData();
+
+
+        if (indData.Time[0] == last_bar)
+            return cached;
+
+
+        last_bar = indData.Time[0];
+
+        double atr_pips = atr / indData.Point;
+        //if(atr_pips < 8.0) {
+        //   cached = SAN_SIGNAL::NOSIG;
+        //   return cached;
+        //}
+        //double slow = stats.vWCM_Score(open, close, volume, period,0,SHIFT);
+        double slow = _engine.vWCM_Raw(10);
+        // Print("[SLOWVCM]: " + slow);
+
+        if ((slow > -0.05) && (slow < 0.1))
+            cached = SIG.NOSIG;
+        if (slow >= 0.1)
+            cached = SIG.BUY;
+        if (slow <= -0.05)
+            cached = SIG.SELL;
+
+        //cached = (slow > 0) ? SAN_SIGNAL::BUY : SAN_SIGNAL::SELL;
+
+        //PrintFormat("vWCM | ATR:%.1f pips | Slow:%.4f",
+        //            atr_pips, slow,
+        //            cached==BUY?"BUY":cached==SELL?"SELL":"NOSIG");
+
+        return cached;
+    }
+
+
+}
+
+
+
 
 
 class SlopeAnalyzer

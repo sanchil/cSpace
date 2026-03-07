@@ -126,3 +126,9 @@ public struct FEATURE_VECTOR
     public double fractalAlignment { get; set; }
 
 }
+
+public struct STRATEGY_STATE
+{
+    public bool newCandle { get; set; }
+    public bool inTrade { get; set; }
+}
