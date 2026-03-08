@@ -132,3 +132,15 @@ public struct STRATEGY_STATE
     public bool newCandle { get; set; }
     public bool inTrade { get; set; }
 }
+
+public struct T_SIG
+{
+ public SIG volMomentumSIG { get; set; }
+ public SIG tradeSlopeSIG { get; set; }
+ public SIG slopeSIG { get; set; }
+ public SIG candleVolSIG { get; set;}
+ public SIG physicsSIG { get; set; }
+ public SIG singleCandleVolSIG { get; set; }
+ public SIG layeredMomentumSIG { get; set; }
+ 
+}

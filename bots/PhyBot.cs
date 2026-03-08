@@ -16,6 +16,8 @@ namespace Phy.Bot
         private CStats _stats;
         private CUtils _utils;
 
+        private bool _canTradeThisBar = false;
+
         // Results objects for indicators
         private StandardDeviation _stdClose;
         private StandardDeviation _stdOpen;
@@ -147,17 +149,17 @@ namespace Phy.Bot
                 Print($"Latest MFI: {data.Mfi[0]}");
         }
 
-        public bool HasTradedCurrentBarIncludingHistory(long magicNumber, Positions pos, History hist)
+        public bool HasTradedCurrentBarIncludingHistory(long magicNumber)
         {
             DateTime currentBarStartTime = Bars.OpenTimes.LastValue;
             string label = magicNumber.ToString();
 
             // Check active positions
-            bool activeExists = pos.Any(p => p.Label == label && p.EntryTime >= currentBarStartTime);
+            bool activeExists = Positions.Any(p => p.Label == label && p.EntryTime >= currentBarStartTime);
             if (activeExists) return true;
 
             // Check closed positions in history
-            bool historyExists = hist.Any(h => h.Label == label && h.EntryTime >= currentBarStartTime);
+            bool historyExists = History.Any(h => h.Label == label && h.EntryTime >= currentBarStartTime);
 
             return historyExists;
         }
@@ -183,8 +185,8 @@ namespace Phy.Bot
 
             InitIndData();
 
-            _utils = new CUtils();
-            _stats = new CStats();
+            _utils = new CUtils(_indData);
+            _stats = new CStats(_indData,_utils);
             _engine = new PhysicsEngine(_indData, _stats, _utils);
             _signal = new CSignal(_engine, _stats, _utils);
 
@@ -199,6 +201,7 @@ namespace Phy.Bot
         protected override void OnBar()
         {
             // A new random comment.
+            _canTradeThisBar = true;
             InitIndData();
             _engine.SetIndData(_indData);
             onBarTask1();
@@ -272,12 +275,14 @@ namespace Phy.Bot
                     // ExecuteMarketOrder(TradeType, SymbolName, Volume, Label, StopLoss, TakeProfit)
                     // ExecuteMarketOrder(TradeType.Buy, SymbolName, volumeUnits, label, 10, 20);
                     ExecuteMarketOrder(TradeType.Buy, SymbolName, volumeUnits, label, null, null);
+                    _canTradeThisBar = false;
                     break;
 
                 case SIG.SELL:
                     Print(">>> SELL signal generated!");
                     // ExecuteMarketOrder(TradeType.Sell, SymbolName, volumeUnits, label, 10, 20);
                     ExecuteMarketOrder(TradeType.Sell, SymbolName, volumeUnits, label, null, null);
+                    _canTradeThisBar = false;
                     break;
 
                 case SIG.HOLD:

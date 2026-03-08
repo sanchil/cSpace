@@ -76,7 +76,7 @@ public class CSignal : ISignal
         // If we let this drop to 0.0 or negative, MathAbs() will allow false signals.
         finalThreshold = Math.Max(finalThreshold, 0.15);
 
-        double slope30 = _stats.slopesVal(_engine.GetIndData().Ima30, shift: SHIFT)[SHIFT];
+        double slope30 = _stats.slopesVal(_engine.GetIndData().Ima30, shift: SHIFT).val2;
 
         // 5. TRIGGER
         if (Math.Abs(normalizedScore) > finalThreshold)
@@ -86,12 +86,28 @@ public class CSignal : ISignal
         }
         return SIG.NOTRADE;
     }
-    public SIG GetSignal()
+    public T_SIG InitSignal()
+    {
+        T_SIG tSig = new T_SIG();
+        IndData indData = _engine.GetIndData();
+        tSig.volMomentumSIG = VolatilityMomentumSIG();
+        tSig.tradeSlopeSIG = TradeSlopeSIG(_stats.slopesVal(indData.Ima30), _stats.slopesVal(indData.Ima60));
+        tSig.slopeSIG = SlopeAnalyzerSIG(_stats.slopesVal(indData.Ima30));
+        tSig.candleVolSIG = CandleVolSIG(indData.Open, indData.Close, indData.TickVolume, indData.Atr[indData.Shift]);
+        tSig.singleCandleVolSIG = new SingleCandleVolSIG(_engine).Analyze(indData.Open, indData.Close, indData.TickVolume, indData.Atr[indData.Shift]);
+        tSig.layeredMomentumSIG = LayeredMomentumSIG(indData.Ima30);
+        tSig.physicsSIG = GetPhysicsSignal();
+
+        return tSig;
+    }
+
+   public SIG GetSignal()
     {
         SIG signal = VolatilityMomentumSIG();
         _tacticalSignal = signal;
         return signal;
     }
+
 
     public SIG GetPhysicsSignal()
     {

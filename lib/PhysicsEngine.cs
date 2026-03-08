@@ -164,8 +164,8 @@ public class PhysicsEngine : IPhysicsEngine
     {
         // Velocity is the average slope over the last N bars
         // We use the slopesVal we already built
-        double[] slopes = _stats.slopesVal(sig, SLOPEDENOM: period, shift: _indData.Shift);
-        return slopes[0]; // Primary slope
+        double slopes = _stats.slopesVal(sig, SLOPEDENOM:5, SLOPEDENOM_WIDE: period, shift: _indData.Shift).val2; // Primary slope as velocity
+        return slopes; // Primary slope
     }
 
     public double GetAcceleration(double[] sig, int period = 10)
@@ -175,8 +175,9 @@ public class PhysicsEngine : IPhysicsEngine
         double v1 = GetVelocity(sig, period); // Current 
 
         // To get previous velocity, we shift the calculation by 1
-        double[] prevSlopes = _stats.slopesVal(sig, SLOPEDENOM: period, shift: S + 1);
-        double v0 = prevSlopes[0];
+        // double[] prevSlopes = _stats.slopesVal(sig, SLOPEDENOM: period, shift: S + 1);
+        double prevSlopes = _stats.slopesVal(sig, SLOPEDENOM:5, SLOPEDENOM_WIDE: period, shift: (_indData.Shift+1)).val2;
+        double v0 = prevSlopes;
 
         return v1 - v0;
     }
@@ -200,8 +201,8 @@ public class PhysicsEngine : IPhysicsEngine
     {
         double stdCp = _indData.StdClose[SHIFT];
         double stdOpen = _indData.StdOpen[SHIFT];
-        double slopeCP = _stats.slopesVal(_indData.StdClose, shift: _indData.Shift)[SHIFT];
-        double slopeOP = _stats.slopesVal(_indData.StdOpen, shift: _indData.Shift)[SHIFT];
+        double slopeCP = _stats.slopesVal(_indData.StdClose, shift: _indData.Shift).val2;
+        double slopeOP = _stats.slopesVal(_indData.StdOpen, shift: _indData.Shift).val2;
 
         // A. Structure Ratio (Current / Open)
         double denominator = (stdOpen < 0.00005) ? 0.00005 : stdOpen;

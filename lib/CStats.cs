@@ -12,12 +12,17 @@ public interface IStats
 
     public int HistogramMagnitude(double[] values, int N = 20, int bins = 5, double minThresh = 0.2);
     public double CalculateSkewness(double[] values, int N, int shift = 0);
-    public double[] slopesVal(
+    // public double[] slopesVal(
+    //     in double[] sig,
+    //     in int SLOPEDENOM = 3,
+    //     in int SLOPEDENOM_WIDE = 5,
+    //     in int shift = 1);
+
+    public DTYPE slopesVal(
         in double[] sig,
         in int SLOPEDENOM = 3,
         in int SLOPEDENOM_WIDE = 5,
-        in double pipValue = 0.0001,
-        in int shift = 1);
+        in int shift = 0);
 
     public double[] slopeRange_v2(in double[] sig, in IndData indData, int range = 15, int slopeDenom = 3, int shift = 1);
 
@@ -26,6 +31,14 @@ public interface IStats
 
 public class CStats : IStats
 {
+    private readonly IndData _indData;
+    private readonly IUtils _utils;
+
+    public CStats(IndData indData, IUtils utils)
+    {
+        _indData = indData;
+        _utils = utils;
+    }
 
     // Implementation of GetDistribution
     public (double mean, double stdDev, double zScore) GetDistribution(double[] values, int shift = 0)
@@ -50,21 +63,22 @@ public class CStats : IStats
         return ((inpVal - mean) / (std + 0.000000001));
     }
 
-    public double[] slopesVal(
+    public DTYPE slopesVal(
             in double[] sig,
             in int SLOPEDENOM = 3,
             in int SLOPEDENOM_WIDE = 5,
-            in double pipValue = 0.0001,
             in int shift = 0)
     {
-        double[] slopes = new double[4];
-        double ppip = pipValue;
+        // double[] slopes = new double[4];
+        DTYPE slopes = new DTYPE(); // Placeholder for any struct-based calculations if needed
+        double ppip = _indData.PipSize;
         if (ppip == 0.0) ppip = 0.0001; // Default to a standard pip value if not provided
-        slopes[0] = (sig[shift] - sig[shift + SLOPEDENOM]) / (SLOPEDENOM * ppip);
-        slopes[1] = (sig[shift] - sig[shift + SLOPEDENOM_WIDE]) / (SLOPEDENOM_WIDE * ppip);
-        slopes[2] = (sig[shift] - sig[sig.Length - 1]) / ((sig.Length - 1) * ppip);
-        slopes[3] = slopes[0] - slopes[1]; // Slope difference as a measure of momentum change
+        slopes.val1 = (sig[shift] - sig[shift + SLOPEDENOM]) / (SLOPEDENOM * ppip);
+        slopes.val2 = (sig[shift] - sig[shift + SLOPEDENOM_WIDE]) / (SLOPEDENOM_WIDE * ppip);
+        slopes.val3 = (sig[shift] - sig[sig.Length - 1]) / ((sig.Length - 1) * ppip);
 
+        // Slope difference as a measure of momentum change
+        slopes.val4 = slopes.val1 - slopes.val2;
 
         return slopes;
     }
