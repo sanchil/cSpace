@@ -101,12 +101,21 @@ public class CSignal : ISignal
         return tSig;
     }
 
-   public SIG GetSignal()
+    //    public SIG GetSignal()
+    //     {
+    //         SIG signal = VolatilityMomentumSIG();
+    //         _tacticalSignal = signal;
+    //         return signal;
+    //     }
+
+    public SIG GetSignal()
     {
-        SIG signal = VolatilityMomentumSIG();
+        T_SIG tSig = InitSignal();
+        SIG signal = tSig.volMomentumSIG;
         _tacticalSignal = signal;
         return signal;
     }
+
 
 
     public SIG GetPhysicsSignal()
@@ -434,7 +443,7 @@ class SingleCandleVolSIG
     public SingleCandleVolSIG(IPhysicsEngine eng)
     {
         _engine = eng;
-        last_bar = DateTime.MinValue;;
+        last_bar = DateTime.MinValue; ;
         cached = SIG.NOSIG;
     }
     public SIG Analyze(

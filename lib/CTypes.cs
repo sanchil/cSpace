@@ -135,12 +135,35 @@ public struct STRATEGY_STATE
 
 public struct T_SIG
 {
- public SIG volMomentumSIG { get; set; }
- public SIG tradeSlopeSIG { get; set; }
- public SIG slopeSIG { get; set; }
- public SIG candleVolSIG { get; set;}
- public SIG physicsSIG { get; set; }
- public SIG singleCandleVolSIG { get; set; }
- public SIG layeredMomentumSIG { get; set; }
- 
+    public SIG volMomentumSIG { get; set; }
+    public SIG tradeSlopeSIG { get; set; }
+    public SIG slopeSIG { get; set; }
+    public SIG candleVolSIG { get; set; }
+    public SIG physicsSIG { get; set; }
+    public SIG singleCandleVolSIG { get; set; }
+    public SIG layeredMomentumSIG { get; set; }
+
+}
+
+
+
+
+public class CAppState
+{
+    private readonly IndData _indData;
+    private readonly IUtils _utils;
+    public CAppState(IndData indData, IUtils utils)
+    {
+        _indData = indData;
+        _utils = utils;
+    }
+    // These will be saved automatically
+    public double PeakSingleSlopePositive { get; set; } = 0;
+    public double PeakSingleSlopeNegative { get; set; } = 0;
+    public double PeakDoubleSlopePositive { get; set; } = 0;
+    public double PeakDoubleSlopeNegative { get; set; } = 0;
+    public double PeakProfitPositive { get; set; } = 0;
+    public double PeakProfitNegative { get; set; } = 0;
+    public int CurrentSignal { get; set; }
+    public DateTime LastTradeTime { get; set; }
 }

@@ -84,17 +84,18 @@ public class PhysicsEngine : IPhysicsEngine
     private IndData _indData;
     private CStats _stats;
     private CUtils _utils;
-
+    private CAppState _appState;
     private int SHIFT = 0;
     // Constructor
 
 
 
-    public PhysicsEngine(IndData indData, CStats stats, CUtils utils)
+    public PhysicsEngine(IndData indData, CStats stats, CUtils utils, CAppState appState)
     {
         _indData = indData;
         _stats = stats;
         _utils = utils;
+        _appState = appState;
         SHIFT = _indData.Shift;
     }
 
@@ -164,7 +165,7 @@ public class PhysicsEngine : IPhysicsEngine
     {
         // Velocity is the average slope over the last N bars
         // We use the slopesVal we already built
-        double slopes = _stats.slopesVal(sig, SLOPEDENOM:5, SLOPEDENOM_WIDE: period, shift: _indData.Shift).val2; // Primary slope as velocity
+        double slopes = _stats.slopesVal(sig, SLOPEDENOM: 5, SLOPEDENOM_WIDE: period, shift: _indData.Shift).val2; // Primary slope as velocity
         return slopes; // Primary slope
     }
 
@@ -176,7 +177,7 @@ public class PhysicsEngine : IPhysicsEngine
 
         // To get previous velocity, we shift the calculation by 1
         // double[] prevSlopes = _stats.slopesVal(sig, SLOPEDENOM: period, shift: S + 1);
-        double prevSlopes = _stats.slopesVal(sig, SLOPEDENOM:5, SLOPEDENOM_WIDE: period, shift: (_indData.Shift+1)).val2;
+        double prevSlopes = _stats.slopesVal(sig, SLOPEDENOM: 5, SLOPEDENOM_WIDE: period, shift: (_indData.Shift + 1)).val2;
         double v0 = prevSlopes;
 
         return v1 - v0;

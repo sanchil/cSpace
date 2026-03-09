@@ -1,5 +1,7 @@
 ﻿using System;
 using System.Runtime.Serialization;
+using System.Text.Json;
+
 using cAlgo.API;
 using cAlgo.API.Indicators;
 using Phy.Lib;
@@ -14,6 +16,7 @@ namespace Phy.Bot
         private CSignal _signal;
 
         private CStats _stats;
+        private CAppState _appState;
         private CUtils _utils;
 
         private bool _canTradeThisBar = false;
@@ -186,10 +189,10 @@ namespace Phy.Bot
             InitIndData();
 
             _utils = new CUtils(_indData);
-            _stats = new CStats(_indData,_utils);
-            _engine = new PhysicsEngine(_indData, _stats, _utils);
+            _stats = new CStats(_indData, _utils);
+            _appState = new CAppState(_indData, _utils);
+            _engine = new PhysicsEngine(_indData, _stats, _utils, _appState);
             _signal = new CSignal(_engine, _stats, _utils);
-
         }
 
         protected override void OnTick()
@@ -211,6 +214,11 @@ namespace Phy.Bot
         protected override void OnStop()
         {
             Print("Cleaning up resources...");
+            // TO SAVE: Turn the object into a string
+            string jsonSaveFile = JsonSerializer.Serialize(_appState);
+
+            // TO LOAD: Turn the string back into an object
+            var myState = JsonSerializer.Deserialize<CAppState>(jsonSaveFile);
         }
 
         private int GetBarAge(Position position)
@@ -227,6 +235,7 @@ namespace Phy.Bot
         void onBarTask1()
         {
             SIG signal = _signal.GetSignal();
+
 
             Print($"SIG: {signal}");
 
