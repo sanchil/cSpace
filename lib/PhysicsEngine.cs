@@ -102,7 +102,7 @@ public class PhysicsEngine : IPhysicsEngine
     // Method-based initialization (Setter)
     public void SetIndData(IndData data)
     {
-        _indData = data; // Update the internal state with the enriched data
+        this._indData = data; // Update the internal state with the enriched data
     }
 
     public IndData GetIndData() => _indData;
@@ -123,17 +123,31 @@ public class PhysicsEngine : IPhysicsEngine
         double atrInPips = atr / pipValue;
         double macroThreshold = atrInPips * 0.05;
 
-        SetIndData(data);
+        // SetIndData(data);
 
-        return data with
+        // return data with
+        // {
+        //     BayesianHoldScore = bayesianHoldScore(data.Ima30, data.Close, data.Open, data.TickVolume, data.BarsHeld, atr),
+        //     NeuronHoldScore = neuronHoldScore(data.Ima30, data.Close, data.Open, data.TickVolume, data.BarsHeld, atr),
+        //     BaseSlope = slowSlope,
+        //     FMSR_Raw = slopeAccelerationRatio(fastSlope, medSlope, slowSlope),
+        //     FractalAlignment = fractalAlignment(fastSlope, medSlope, slowSlope)
+        // };     
+
+
+        IndData updatedData = data with
         {
             BayesianHoldScore = bayesianHoldScore(data.Ima30, data.Close, data.Open, data.TickVolume, data.BarsHeld, atr),
             NeuronHoldScore = neuronHoldScore(data.Ima30, data.Close, data.Open, data.TickVolume, data.BarsHeld, atr),
             BaseSlope = slowSlope,
             FMSR_Raw = slopeAccelerationRatio(fastSlope, medSlope, slowSlope),
             FractalAlignment = fractalAlignment(fastSlope, medSlope, slowSlope)
-        };          // Update the snapshot so the Strategy (st1) can see the results
-                    // Return the (possibly enriched) data
+        };
+        SetIndData(updatedData);
+        return updatedData;
+
+        // Update the snapshot so the Strategy (st1) can see the results
+        // Return the (possibly enriched) data
     }
 
     // 4. atrKinetic (Universal Timeframe Logic - Sqrt Rule)
