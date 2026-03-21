@@ -20,6 +20,7 @@ public interface IPhysicsEngine
     public void SetIndData(IndData data);
     public IndData ProcessMarketData(IndData data);
     public double atrKinetic();
+    public double atrScale(double minVal, double maxVal);
     public double adxKinetic(double scale = 50.0, int shift = 1);
     public double adxPotential(int period = 14);
     public double adxVector();
@@ -141,7 +142,8 @@ public class PhysicsEngine : IPhysicsEngine
             NeuronHoldScore = neuronHoldScore(data.Ima30, data.Close, data.Open, data.TickVolume, data.BarsHeld, atr),
             BaseSlope = slowSlope,
             FMSR_Raw = slopeAccelerationRatio(fastSlope, medSlope, slowSlope),
-            FractalAlignment = fractalAlignment(fastSlope, medSlope, slowSlope)
+            FractalAlignment = fractalAlignment(fastSlope, medSlope, slowSlope),
+            SpreadLimit = atrScale(15, 120)
         };
         SetIndData(updatedData);
         return updatedData;
@@ -190,6 +192,11 @@ public class PhysicsEngine : IPhysicsEngine
         // 4. SQUASH (Kinetic Energy = v^2)
         // Punish weak moves, reward strong ones.
         return (atrNorm * atrNorm);
+    }
+
+    public double atrScale(double minVal, double maxVal)
+    {
+        return minVal + ((maxVal - minVal) * atrKinetic());
     }
 
     // 1. adxPotential (The Fuel Gauge)

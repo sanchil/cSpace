@@ -96,6 +96,7 @@ public readonly record struct IndData
 
     public double Current_Period { get; init; }
     public double DBL_EPSILON { get; init; }
+    public double SpreadLimit { get; init; }
     public int Digits { get; init; }
 }
 
