@@ -102,33 +102,7 @@ public class PhysicsEngine : IPhysicsEngine
     // Method-based initialization (Setter)
     public void SetIndData(IndData data)
     {
-        // _indData = data;
-
-        // int SHIFT = data.Shift;
-        // double pipValue = data.PipValue;
-        // double atr = data.Atr[SHIFT];
-        // double fastSlope = (data.Ima14[SHIFT] - data.Ima14[5]) / (5 * pipValue);
-        // double medSlope = (data.Ima30[SHIFT] - data.Ima30[10]) / (10 * pipValue);
-        // double slowSlope = (data.Ima60[SHIFT] - data.Ima60[30]) / (30 * pipValue);
-
-
-        // // NEW: Apply your strict Macro Trend threshold (e.g., 0.1 pips per bar)
-        // //double macroThreshold = 0.1;
-        // double atrInPips = atr / pipValue;
-        // double macroThreshold = atrInPips * 0.05;
-
-
-        // data = data with
-        // {
-        //     BayesianHoldScore = bayesianHoldScore(data.Ima30, data.Close, data.Open, data.TickVolume, data.BarsHeld, atr),
-        //     NeuronHoldScore = neuronHoldScore(data.Ima30, data.Close, data.Open, data.TickVolume, data.BarsHeld, atr),
-        //     BaseSlope = slowSlope,
-        //     FMSR_Raw = slopeAccelerationRatio(fastSlope, medSlope, slowSlope),
-        //     FractalAlignment = fractalAlignment(fastSlope, medSlope, slowSlope)
-        // };
-
         _indData = data; // Update the internal state with the enriched data
-
     }
 
     public IndData GetIndData() => _indData;
