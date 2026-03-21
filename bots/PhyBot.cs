@@ -205,8 +205,9 @@ namespace Phy.Bot
         {
             // A new random comment.
             _canTradeThisBar = true;
-            InitIndData();
+            InitIndData();            
             _engine.SetIndData(_indData);
+            _signal.InitSignal();
             onBarTask1();
 
         }
@@ -235,6 +236,9 @@ namespace Phy.Bot
         void onBarTask1()
         {
             SIG signal = _signal.GetSignal();
+            if(_signal.GetCloseSignal() == SIG.CLOSE) {
+                signal = SIG.CLOSE;
+            }
 
 
             Print($"SIG: {signal}");
@@ -248,6 +252,7 @@ namespace Phy.Bot
             // Count OcNLY positions opened by this bot (using your "PhyLabel")
             var botPositions = Positions.FindAll(label, SymbolName);
             int activeTradesCount = botPositions.Length;
+            if (activeTradesCount > 15) return;
             //################## CLOSE LOGIC ##################
             if (activeTradesCount > 0)
             {
@@ -266,6 +271,9 @@ namespace Phy.Bot
                     else if (pos.TradeType == TradeType.Sell && signal == SIG.BUY)
                     {
                         Print(">>> Closing SELL position due to BUY signal...");
+                        ClosePosition(pos);
+                    }else if(signal == SIG.CLOSE) {
+                        Print(">>> Closing position due to CLOSE signal...");
                         ClosePosition(pos);
                     }
                 }

@@ -142,6 +142,13 @@ public struct T_SIG
     public SIG physicsSIG { get; set; }
     public SIG singleCandleVolSIG { get; set; }
     public SIG layeredMomentumSIG { get; set; }
+    public SIG macroWaveSIG { get; set; }
+    public SIG microWaveSIG { get; set; }
+    public SIG slopeAnalyzerSIG { get; set; }   
+    public SIG waveTideSIG { get; set; }
+    public SIG openSIG { get; set; }
+    public SIG closeSIG { get; set; }
+
 
 }
 

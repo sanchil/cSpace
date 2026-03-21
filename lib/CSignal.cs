@@ -8,8 +8,14 @@ public interface ISignal
     public SIG VolatilityMomentumSIG();
     public SIG GetSignal();
     public SIG TradeSlopeSIG(in DTYPE fast, in DTYPE slow, int magicnumber = -1);
-    public SIG TradeSlopeSIG_Static(in DTYPE fast, in DTYPE slow, int magicnumber = -1);
-    public SIG waveTideSIG(in DTYPE fast, in DTYPE med, in DTYPE slow);
+
+    public SIG MicroWaveSIG(in DTYPE fast, in DTYPE med);
+    public SIG MacroWaveSIG(in DTYPE fast, in DTYPE slow);
+    public SIG SlopeAnalyzerSIG(in DTYPE slope);
+    public SIG LayeredMomentumSIG(in double[] signal, int N = 20);
+
+    public SIG CandleVolSIG(in double[] open, in double[] close, in double[] volume, in double atr, int period = 30, int SHIFT = 1);
+    public SIG WaveTideSIG(in DTYPE fast, in DTYPE med, in DTYPE slow);
 
 
 
@@ -22,6 +28,7 @@ public class CSignal : ISignal
     private SIG _tacticalSignal;
     private CStats _stats;
     private CUtils _utils;
+    private T_SIG _tSig;
 
     private static readonly double[] closeRVal = { 1.3, 1.2, 1.1, 1.0, 0.9 };
     private double m_peakRatio;  // class member
@@ -35,6 +42,7 @@ public class CSignal : ISignal
         _stats = stats;
         _utils = utils;
         _tacticalSignal = SIG.HOLD;
+        _tSig = InitSignal();
     }
 
 
@@ -96,6 +104,9 @@ public class CSignal : ISignal
         tSig.candleVolSIG = CandleVolSIG(indData.Open, indData.Close, indData.TickVolume, indData.Atr[indData.Shift]);
         tSig.singleCandleVolSIG = new SingleCandleVolSIG(_engine).Analyze(indData.Open, indData.Close, indData.TickVolume, indData.Atr[indData.Shift]);
         tSig.layeredMomentumSIG = LayeredMomentumSIG(indData.Ima30);
+        tSig.microWaveSIG = MicroWaveSIG(_stats.slopesVal(indData.Ima30), _stats.slopesVal(indData.Ima60));
+        tSig.macroWaveSIG = MacroWaveSIG(_stats.slopesVal(indData.Ima30), _stats.slopesVal(indData.Ima60));
+        tSig.waveTideSIG = WaveTideSIG(_stats.slopesVal(indData.Ima30), _stats.slopesVal(indData.Ima60), _stats.slopesVal(indData.Ima120));
         tSig.physicsSIG = GetPhysicsSignal();
 
         return tSig;
@@ -110,12 +121,26 @@ public class CSignal : ISignal
 
     public SIG GetSignal()
     {
-        T_SIG tSig = InitSignal();
-        SIG signal = tSig.volMomentumSIG;
-        _tacticalSignal = signal;
-        return signal;
+        // _tSig = InitSignal();
+        SIG OpenSig = _tSig.tradeSlopeSIG;
+        SIG CloseSig = _tSig.microWaveSIG;
+        _tSig.openSIG = OpenSig;
+        _tSig.closeSIG = CloseSig;
+        _tacticalSignal = OpenSig;
+        return OpenSig;
     }
 
+    public SIG GetCloseSignal()
+    {
+        // if (_tSig.closeSIG == SIG.NOTRADE)
+        // {
+        //     return _tSig.microWaveSIG; // Fallback to volatility momentum if no specific close signal
+        // }
+        if(_utils.OppSignal(_tSig.openSIG, _tSig.microWaveSIG)) {
+            return SIG.CLOSE;
+        }
+        return SIG.NOSIG;
+    }
 
 
     public SIG GetPhysicsSignal()
@@ -262,12 +287,61 @@ public class CSignal : ISignal
         return SIG.NOSIG;
     }
 
-    public SIG TradeSlopeSIG_Static(in DTYPE fast, in DTYPE slow, int magicnumber = -1)
+
+    public SIG MicroWaveSIG(in DTYPE fast, in DTYPE med)
+    {
+
+        // 1. THE MICRO-FLOOR (Aggressive)
+        // We lower the barrier to entry. We only need 10% of ATR to consider it "Active."
+        IndData indData = _engine.GetIndData();
+        double atr = indData.Atr[indData.Shift];
+
+        double MICRO_FLOOR = atr * 0.10;
+        double NOTRADEZONE = MICRO_FLOOR * 1.5;
+
+
+        double fS = fast.val1;
+        double mS = med.val1;
+        double absSlow = Math.Abs(mS);
+
+        SIG dir = (fS > 0) ? SIG.BUY : SIG.SELL;
+
+        // 2. THE VELOCITY CHECK (The "Explosion" Gate)
+        // We use slopeRatio but we pass our lower MICRO_FLOOR.
+        // We want to see the Wave pulling away from the Current.
+        double vScore = _engine.expansionCompressionRatio(fS, mS, MICRO_FLOOR);
+
+        // 3. THE MICRO-POLICY
+        // We ONLY enter if the expansion is nearly perfect (>= 0.95)
+        // This ensures we are catching the "Meat" of the micro-move.
+        //        if (vScore >= 0.95)
+        //       if (vScore >= 0.7)
+        if (vScore >= 0.7)
+        {
+            return dir;
+        }
+
+        // 4. THE LIGHTNING EXIT
+        // If the velocity score drops even slightly (e.g., below 0.70),
+        // we BAIL. There is no macro structure to save us here.
+        if ((vScore < 0.70) && (absSlow <= NOTRADEZONE)) return SIG.CLOSE;
+        if ((vScore < 0.70) && (absSlow > NOTRADEZONE))
+        {
+            return SIG.NOSIG;
+        }
+
+        return SIG.NOSIG;
+    }
+
+
+    public SIG MacroWaveSIG(in DTYPE fast, in DTYPE slow)
     {
 
         IndData indData = _engine.GetIndData();
         double atr = indData.Atr[indData.Shift];
         double floor = atr * 0.30;
+        double NOTRADEZONE = (floor * 1.5);
+
 
         double fS = fast.val1;
         double sS = slow.val1;
@@ -286,61 +360,42 @@ public class CSignal : ISignal
 
         // 2. THE LEAN POLICY
         // If mScore is 1.0, the Metric has already verified Direction, Floor, and Expansion.
-        if (mScore >= 1.0) return dir;
+        if (mScore >= 0.9) return dir;
 
         // For Case B (Compression), we check for the "Power Trend" extra requirement.
-        if (mScore >= 0.8 && absSlow >= (floor * 1.5)) return dir;
+        if (mScore >= 0.8 && absSlow >= NOTRADEZONE) return dir;
+
+        // 3. FLATSQUEEZE: Squeezing/Weak and the base trend is flat
+        if (mScore < 0.8 && absSlow < NOTRADEZONE) return SIG.CLOSE;
+
+        // 4. BUYSQUEEZE / SELLSQUEEZE: Squeezing but the trend is heavily sloped
+        if (mScore < 0.8 && absSlow >= NOTRADEZONE)
+        {
+            //if(dir == SIG.BUY) {
+            //   return SIG.SELL;
+            //}
+            //if(dir == SIG.SELL) {
+            //   return SIG.BUY;
+            //}
+            return SIG.NOSIG;
+        }
+
 
         if (mScore == 0) return SIG.CLOSE;
+
 
         // If the Metric returned 0.0 (Veto) or a weak ratio, we bail.
         return SIG.CLOSE;
     }
-
-    public SIG microWaveSIG(in DTYPE fast, in DTYPE med)
-    {
-
-        // 1. THE MICRO-FLOOR (Aggressive)
-        // We lower the barrier to entry. We only need 10% of ATR to consider it "Active."
-        IndData indData = _engine.GetIndData();
-        double atr = indData.Atr[indData.Shift];
-
-        double MICRO_FLOOR = atr * 0.10;
-
-        double fS = fast.val1;
-        double mS = med.val1;
-        SIG dir = (fS > 0) ? SIG.BUY : SIG.SELL;
-
-        // 2. THE VELOCITY CHECK (The "Explosion" Gate)
-        // We use slopeRatio but we pass our lower MICRO_FLOOR.
-        // We want to see the Wave pulling away from the Current.
-        double vScore = _engine.expansionCompressionRatio(fS, mS, MICRO_FLOOR);
-
-        // 3. THE MICRO-POLICY
-        // We ONLY enter if the expansion is nearly perfect (>= 0.95)
-        // This ensures we are catching the "Meat" of the micro-move.
-        if (vScore >= 0.95)
-        {
-            return dir;
-        }
-
-        // 4. THE LIGHTNING EXIT
-        // If the velocity score drops even slightly (e.g., below 0.70),
-        // we BAIL. There is no macro structure to save us here.
-        if (vScore < 0.70) return SIG.CLOSE;
-
-        return SIG.NOSIG;
-    }
-
     //+------------------------------------------------------------------+
     //|                                                                  |
     //+------------------------------------------------------------------+
-    public SIG waveTideSIG(in DTYPE fast, in DTYPE med, in DTYPE slow)
+    public SIG WaveTideSIG(in DTYPE fast, in DTYPE med, in DTYPE slow)
     {
 
         // THE TRIPLE-GEOMETRY CHAIN
-        SIG waveSignal = TradeSlopeSIG_Static(fast, med);  // Micro-Expansion
-        SIG tideSignal = TradeSlopeSIG_Static(med, slow);  // Macro-Expansion
+        SIG waveSignal = MacroWaveSIG(fast, med);  // Micro-Expansion
+        SIG tideSignal = MacroWaveSIG(med, slow);  // Macro-Expansion
 
         if (waveSignal == SIG.BUY && tideSignal == SIG.BUY) return SIG.BUY;
         if (waveSignal == SIG.SELL && tideSignal == SIG.SELL) return SIG.SELL;
@@ -359,7 +414,7 @@ public class CSignal : ISignal
     //+------------------------------------------------------------------+
     //| Layered Filter: ADX → Histogram for Momentum Strength            |
     //+------------------------------------------------------------------+
-    SIG LayeredMomentumSIG(in double[] signal, int N = 20)
+    public SIG LayeredMomentumSIG(in double[] signal, int N = 20)
     {
 
         double gate = _engine.layeredMomentumFilter(signal, N);
@@ -376,7 +431,7 @@ public class CSignal : ISignal
     //+------------------------------------------------------------------+
     //|                                                                  |
     //+------------------------------------------------------------------+
-    SIG CandleVolSIG(
+    public SIG CandleVolSIG(
             in double[] open,
             in double[] close,
             in double[] volume,

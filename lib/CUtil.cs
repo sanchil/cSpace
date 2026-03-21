@@ -25,4 +25,17 @@ public class CUtils : IUtils
         }
         return false;
     }
+
+    //+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
+public bool OppSignal(SIG sig1, SIG sig2) {
+   if((sig1 == SIG.BUY) && (sig2 == SIG.SELL)) {
+      return true;
+   }
+   if((sig1 == SIG.SELL) && (sig2 == SIG.BUY)) {
+      return true;
+   }
+   return false;
+}
 }
