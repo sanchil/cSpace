@@ -209,18 +209,32 @@ namespace Phy.Bot
             // A new random comment.
             _canTradeThisBar = true;
             InitIndData();
-            _engine.SetIndData(_indData);
-            double atr = _indData.Atr[_indData.Shift];
-            double bScore = _engine.bayesianHoldScore(_indData.Ima30, _indData.Close, _indData.Open, _indData.TickVolume, _indData.BarsHeld, atr);
-            double nScore = _engine.neuronHoldScore(_indData.Ima30, _indData.Close, _indData.Open, _indData.TickVolume, _indData.BarsHeld, atr);
-            _indData = _indData with
-            {
-                BayesianHoldScore = bScore,
-                NeuronHoldScore = nScore
-            };          // Update the snapshot so the Strategy (st1) can see the results
-            //    data.bayesianHoldScore = bScore;
-            //    data.neuronHoldScore = nScore;
+            _indData = _engine.ProcessMarketData(_indData); // Reset shift for the new bar
+            //_engine.SetIndData(_indData);
 
+            // int SHIFT = _indData.Shift;
+            // double pipValue = _indData.PipValue;
+            // double atr = _indData.Atr[SHIFT];            
+            // double fastSlope = (_indData.Ima14[SHIFT] - _indData.Ima14[5]) / (5 * pipValue);
+            // double medSlope = (_indData.Ima30[SHIFT] - _indData.Ima30[10]) / (10 * pipValue);
+            // double slowSlope = (_indData.Ima60[SHIFT] - _indData.Ima60[30]) / (30 * pipValue);
+
+
+            // // NEW: Apply your strict Macro Trend threshold (e.g., 0.1 pips per bar)
+            // //double macroThreshold = 0.1;
+            // double atrInPips = atr/ pipValue;
+            // double macroThreshold = atrInPips * 0.05;
+
+
+            // _indData = _indData with
+            // {
+            //     BayesianHoldScore = _engine.bayesianHoldScore(_indData.Ima30, _indData.Close, _indData.Open, _indData.TickVolume, _indData.BarsHeld, atr),
+            //     NeuronHoldScore = _engine.neuronHoldScore(_indData.Ima30, _indData.Close, _indData.Open, _indData.TickVolume, _indData.BarsHeld, atr),
+            //     BaseSlope = slowSlope,
+            //     FMSR_Raw = _engine.slopeAccelerationRatio(fastSlope, medSlope, slowSlope),
+            //     FractalAlignment = _engine.fractalAlignment(fastSlope, medSlope, slowSlope)
+            // };          // Update the snapshot so the Strategy (st1) can see the results
+     
 
             _signal.InitSignal();
             onBarTask1();

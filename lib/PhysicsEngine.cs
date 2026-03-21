@@ -18,7 +18,7 @@ public interface IPhysicsEngine
 {
     public IndData GetIndData();
     public void SetIndData(IndData data);
-
+    public IndData ProcessMarketData(IndData data);
     public double atrKinetic();
     public double adxKinetic(double scale = 50.0, int shift = 1);
     public double adxPotential(int period = 14);
@@ -102,10 +102,65 @@ public class PhysicsEngine : IPhysicsEngine
     // Method-based initialization (Setter)
     public void SetIndData(IndData data)
     {
-        _indData = data;
+        // _indData = data;
+
+        // int SHIFT = data.Shift;
+        // double pipValue = data.PipValue;
+        // double atr = data.Atr[SHIFT];
+        // double fastSlope = (data.Ima14[SHIFT] - data.Ima14[5]) / (5 * pipValue);
+        // double medSlope = (data.Ima30[SHIFT] - data.Ima30[10]) / (10 * pipValue);
+        // double slowSlope = (data.Ima60[SHIFT] - data.Ima60[30]) / (30 * pipValue);
+
+
+        // // NEW: Apply your strict Macro Trend threshold (e.g., 0.1 pips per bar)
+        // //double macroThreshold = 0.1;
+        // double atrInPips = atr / pipValue;
+        // double macroThreshold = atrInPips * 0.05;
+
+
+        // data = data with
+        // {
+        //     BayesianHoldScore = bayesianHoldScore(data.Ima30, data.Close, data.Open, data.TickVolume, data.BarsHeld, atr),
+        //     NeuronHoldScore = neuronHoldScore(data.Ima30, data.Close, data.Open, data.TickVolume, data.BarsHeld, atr),
+        //     BaseSlope = slowSlope,
+        //     FMSR_Raw = slopeAccelerationRatio(fastSlope, medSlope, slowSlope),
+        //     FractalAlignment = fractalAlignment(fastSlope, medSlope, slowSlope)
+        // };
+
+        _indData = data; // Update the internal state with the enriched data
+
     }
 
     public IndData GetIndData() => _indData;
+
+    public IndData ProcessMarketData(IndData data)
+    {
+
+        SHIFT = data.Shift;
+        double pipValue = data.PipValue;
+        double atr = data.Atr[SHIFT];
+        double fastSlope = (data.Ima14[SHIFT] - data.Ima14[5]) / (5 * pipValue);
+        double medSlope = (data.Ima30[SHIFT] - data.Ima30[10]) / (10 * pipValue);
+        double slowSlope = (data.Ima60[SHIFT] - data.Ima60[30]) / (30 * pipValue);
+
+
+        // NEW: Apply your strict Macro Trend threshold (e.g., 0.1 pips per bar)
+        //double macroThreshold = 0.1;
+        double atrInPips = atr / pipValue;
+        double macroThreshold = atrInPips * 0.05;
+
+        SetIndData(data);
+
+        return data with
+        {
+            BayesianHoldScore = bayesianHoldScore(data.Ima30, data.Close, data.Open, data.TickVolume, data.BarsHeld, atr),
+            NeuronHoldScore = neuronHoldScore(data.Ima30, data.Close, data.Open, data.TickVolume, data.BarsHeld, atr),
+            BaseSlope = slowSlope,
+            FMSR_Raw = slopeAccelerationRatio(fastSlope, medSlope, slowSlope),
+            FractalAlignment = fractalAlignment(fastSlope, medSlope, slowSlope)
+        };          // Update the snapshot so the Strategy (st1) can see the results
+                    // Return the (possibly enriched) data
+    }
 
     // 4. atrKinetic (Universal Timeframe Logic - Sqrt Rule)
     // TRUTH: "Is the absolute movement large enough to trade?"

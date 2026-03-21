@@ -76,7 +76,9 @@ public readonly record struct IndData
     public int CurrSpread { get; init; }
     public int Shift { get; init; }
     public int BarsHeld { get; init; }
+    public double BaseSlope { get; init; }
 
+    public double FMSR_Raw { get; init; }
     // --- 3. PHYSICS SCORES ---
     public double HoldScore { get; init; }
     public double BayesianHoldScore { get; init; }
