@@ -64,7 +64,10 @@ namespace Phy.Bot
         // FIX: Added 'void' return type to match the interface contract
         public void InitIndData()
         {
+
+
             _indData = new IndData
+
             {
                 MagicNumber = 1002,
                 BarsHeld = 0,
@@ -205,8 +208,20 @@ namespace Phy.Bot
         {
             // A new random comment.
             _canTradeThisBar = true;
-            InitIndData();            
+            InitIndData();
             _engine.SetIndData(_indData);
+            double atr = _indData.Atr[_indData.Shift];
+            double bScore = _engine.bayesianHoldScore(_indData.Ima30, _indData.Close, _indData.Open, _indData.TickVolume, _indData.BarsHeld, atr);
+            double nScore = _engine.neuronHoldScore(_indData.Ima30, _indData.Close, _indData.Open, _indData.TickVolume, _indData.BarsHeld, atr);
+            _indData = _indData with
+            {
+                BayesianHoldScore = bScore,
+                NeuronHoldScore = nScore
+            };          // Update the snapshot so the Strategy (st1) can see the results
+            //    data.bayesianHoldScore = bScore;
+            //    data.neuronHoldScore = nScore;
+
+
             _signal.InitSignal();
             onBarTask1();
 
@@ -236,7 +251,8 @@ namespace Phy.Bot
         void onBarTask1()
         {
             SIG signal = _signal.GetSignal();
-            if(_signal.GetCloseSignal() == SIG.CLOSE) {
+            if (_signal.GetCloseSignal() == SIG.CLOSE)
+            {
                 signal = SIG.CLOSE;
             }
 
@@ -272,7 +288,9 @@ namespace Phy.Bot
                     {
                         Print(">>> Closing SELL position due to BUY signal...");
                         ClosePosition(pos);
-                    }else if(signal == SIG.CLOSE) {
+                    }
+                    else if (signal == SIG.CLOSE)
+                    {
                         Print(">>> Closing position due to CLOSE signal...");
                         ClosePosition(pos);
                     }
