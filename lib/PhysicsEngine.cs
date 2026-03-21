@@ -103,6 +103,7 @@ public class PhysicsEngine : IPhysicsEngine
     public void SetIndData(IndData data)
     {
         this._indData = data; // Update the internal state with the enriched data
+        this.SHIFT = data.Shift;
     }
 
     public IndData GetIndData() => _indData;
@@ -116,7 +117,6 @@ public class PhysicsEngine : IPhysicsEngine
         double fastSlope = (data.Ima14[SHIFT] - data.Ima14[5]) / (5 * pipValue);
         double medSlope = (data.Ima30[SHIFT] - data.Ima30[10]) / (10 * pipValue);
         double slowSlope = (data.Ima60[SHIFT] - data.Ima60[30]) / (30 * pipValue);
-
 
         // NEW: Apply your strict Macro Trend threshold (e.g., 0.1 pips per bar)
         //double macroThreshold = 0.1;
