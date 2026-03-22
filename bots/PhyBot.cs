@@ -11,16 +11,15 @@ namespace Phy.Bot
     [Robot(AccessRights = AccessRights.None)]
     public class PhyBot : Robot, IBotEngine
     {
+        private string _label = "PhyBot_Signal";
+        private int _barsHeld = 0;
         private IndData _indData;
         private PhysicsEngine _engine;
         private CSignal _signal;
-
         private CStats _stats;
         private CAppState _appState;
         private CUtils _utils;
-
         private bool _canTradeThisBar = false;
-
         // Results objects for indicators
         private StandardDeviation _stdClose;
         private StandardDeviation _stdOpen;
@@ -170,6 +169,13 @@ namespace Phy.Bot
             return historyExists;
         }
 
+        private void SyncSubsystems(IndData data)
+        {
+            _appState.SetIndData(data);
+            _stats.SetIndData(data);
+            _utils.SetIndData(data);
+        }
+
         protected override void OnStart()
         {
             Print("Phy.Bot initialized. Connecting to Physics Engine...");
@@ -195,48 +201,39 @@ namespace Phy.Bot
             _stats = new CStats(_indData, _utils);
             _appState = new CAppState(_indData, _utils);
             _engine = new PhysicsEngine(_indData, _stats, _utils, _appState);
+            _engine.Log = this.Print;
             _signal = new CSignal(_engine, _stats, _utils);
+            // Inject cTrader's Print method for logging
         }
 
         protected override void OnTick()
         {
             // High-frequency math goes here
+            var botPositions = Positions.FindAll(_label, SymbolName);
+            int activeTradesCount = botPositions.Length;
+            if (activeTradesCount > 0)
+            {
+                foreach (var pos in botPositions)
+                {
+                    
+                }
+            }
+
+
+
+
 
         }
 
         protected override void OnBar()
         {
             // A new random comment.
-            _canTradeThisBar = true;
+            this._canTradeThisBar = true;
             InitIndData();
-            _indData = _engine.ProcessMarketData(_indData); // Reset shift for the new bar
-            //_engine.SetIndData(_indData);
-
-            // int SHIFT = _indData.Shift;
-            // double pipValue = _indData.PipValue;
-            // double atr = _indData.Atr[SHIFT];            
-            // double fastSlope = (_indData.Ima14[SHIFT] - _indData.Ima14[5]) / (5 * pipValue);
-            // double medSlope = (_indData.Ima30[SHIFT] - _indData.Ima30[10]) / (10 * pipValue);
-            // double slowSlope = (_indData.Ima60[SHIFT] - _indData.Ima60[30]) / (30 * pipValue);
-
-
-            // // NEW: Apply your strict Macro Trend threshold (e.g., 0.1 pips per bar)
-            // //double macroThreshold = 0.1;
-            // double atrInPips = atr/ pipValue;
-            // double macroThreshold = atrInPips * 0.05;
-
-
-            // _indData = _indData with
-            // {
-            //     BayesianHoldScore = _engine.bayesianHoldScore(_indData.Ima30, _indData.Close, _indData.Open, _indData.TickVolume, _indData.BarsHeld, atr),
-            //     NeuronHoldScore = _engine.neuronHoldScore(_indData.Ima30, _indData.Close, _indData.Open, _indData.TickVolume, _indData.BarsHeld, atr),
-            //     BaseSlope = slowSlope,
-            //     FMSR_Raw = _engine.slopeAccelerationRatio(fastSlope, medSlope, slowSlope),
-            //     FractalAlignment = _engine.fractalAlignment(fastSlope, medSlope, slowSlope)
-            // };          // Update the snapshot so the Strategy (st1) can see the results
-     
-
+            this._indData = _engine.ProcessMarketData(_indData); // Reset shift for the new bar
             _signal.InitSignal();
+            SyncSubsystems(this._indData);
+            // Update app state with the latest data
             onBarTask1();
 
         }
@@ -262,25 +259,46 @@ namespace Phy.Bot
             // 3. The difference is the number of bars the trade has existed
             return currentBarIndex - entryBarIndex;
         }
+
+        private int GetActivePositionsCount(string label)
+        {
+            // 'Positions' is the collection of all currently open trades in the account.
+            // We filter them by Label (the MagicNumber equivalent) and Symbol.
+            return Positions.Count(p => p.Label == label && p.SymbolName == SymbolName);
+        }
+
+
         void onBarTask1()
         {
             SIG signal = _signal.GetSignal();
+            SIG tradePosition = SIG.NOSIG;
+            int barsHeld = 0;
+
+
             if (_signal.GetCloseSignal() == SIG.CLOSE)
             {
                 signal = SIG.CLOSE;
             }
+
+            bool hasConsensus = (((_indData.HyperbolicAction == 1) || (_indData.CobbDouglasAction == 1)) && _indData.MarketAction == 1);
+            bool hasCollapse = (_indData.HyperbolicAction == -1 && _indData.CobbDouglasAction == -1 && _indData.MarketAction == -1);
+
+
+            double absF = Math.Abs(_indData.FMSR_Norm);
+            //bool isSqueeze = (absF <= 0.15);
+            bool isSqueeze = (absF <= 0.4);
 
 
             Print($"SIG: {signal}");
 
             // Define your volume (Example: 10,000 units = 0.10 lots)
             double volumeUnits = Symbol.QuantityToVolumeInUnits(0.1);
-            string label = "PhyBot_Signal";
-
+            // string label = "PhyBot_Signal";
+            //int activeTrades = GetActivePositionsCount(label);
             int allPositions = Positions.Count;
 
             // Count OcNLY positions opened by this bot (using your "PhyLabel")
-            var botPositions = Positions.FindAll(label, SymbolName);
+            var botPositions = Positions.FindAll(_label, SymbolName);
             int activeTradesCount = botPositions.Length;
             if (activeTradesCount > 15) return;
             //################## CLOSE LOGIC ##################
@@ -288,8 +306,11 @@ namespace Phy.Bot
             {
                 foreach (var pos in botPositions)
                 {
-                    _indData = _indData with { TradePosition = (pos.TradeType == TradeType.Buy) ? SIG.BUY : SIG.SELL, BarsHeld = GetBarAge(pos) };
-                    _engine.SetIndData(_indData);
+                    // _indData = _indData with { TradePosition = (pos.TradeType == TradeType.Buy) ? SIG.BUY : SIG.SELL, BarsHeld = GetBarAge(pos) };
+                    // _engine.SetIndData(_indData);
+                    tradePosition = (pos.TradeType == TradeType.Buy) ? SIG.BUY : SIG.SELL;
+                    barsHeld = GetBarAge(pos);
+
                     // printData(_indData);
 
                     // Check if we need to close the position based on the new signal
@@ -308,6 +329,11 @@ namespace Phy.Bot
                         Print(">>> Closing position due to CLOSE signal...");
                         ClosePosition(pos);
                     }
+                    else if (hasCollapse)
+                    {
+                        Print(">>> Closing position due to MARKET COLLAPSE signal...");
+                        ClosePosition(pos);
+                    }
                 }
 
             }
@@ -323,14 +349,14 @@ namespace Phy.Bot
                     Print(">>> BUY signal generated!");
                     // ExecuteMarketOrder(TradeType, SymbolName, Volume, Label, StopLoss, TakeProfit)
                     // ExecuteMarketOrder(TradeType.Buy, SymbolName, volumeUnits, label, 10, 20);
-                    ExecuteMarketOrder(TradeType.Buy, SymbolName, volumeUnits, label, null, null);
+                    ExecuteMarketOrder(TradeType.Buy, SymbolName, volumeUnits, _label, null, null);
                     _canTradeThisBar = false;
                     break;
 
                 case SIG.SELL:
                     Print(">>> SELL signal generated!");
                     // ExecuteMarketOrder(TradeType.Sell, SymbolName, volumeUnits, label, 10, 20);
-                    ExecuteMarketOrder(TradeType.Sell, SymbolName, volumeUnits, label, null, null);
+                    ExecuteMarketOrder(TradeType.Sell, SymbolName, volumeUnits, _label, null, null);
                     _canTradeThisBar = false;
                     break;
 
