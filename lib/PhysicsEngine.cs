@@ -18,7 +18,7 @@ public interface IPhysicsEngine
 {
     public IndData GetIndData();
     public void SetIndData(IndData data);
-    public IndData ProcessMarketData(IndData data);
+    public IndData ProcessMarketData(IndData data, int barsHeld = 0);
     public double atrKinetic();
     public double atrScale(double minVal, double maxVal);
     public double adxKinetic(double scale = 50.0, int shift = 1);
@@ -115,7 +115,7 @@ public class PhysicsEngine : IPhysicsEngine
 
     public IndData GetIndData() => _indData;
 
-    public IndData ProcessMarketData(IndData data)
+    public IndData ProcessMarketData(IndData data, int barsHeld = 0)
     {
 
         SHIFT = data.Shift;
@@ -153,7 +153,8 @@ public class PhysicsEngine : IPhysicsEngine
             SpreadLimit = spreadLimit,
             CobbDouglasAction = cobbsDouglasAction,
             HyperbolicAction = physicsAction,
-            MarketAction = marketAction
+            MarketAction = marketAction,
+            BarsHeld = barsHeld
         };
 
         SetIndData(updatedData);

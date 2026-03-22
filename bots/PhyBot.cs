@@ -206,22 +206,10 @@ namespace Phy.Bot
             // Inject cTrader's Print method for logging
         }
 
+
+
         protected override void OnTick()
         {
-            // High-frequency math goes here
-            var botPositions = Positions.FindAll(_label, SymbolName);
-            int activeTradesCount = botPositions.Length;
-            if (activeTradesCount > 0)
-            {
-                foreach (var pos in botPositions)
-                {
-                    
-                }
-            }
-
-
-
-
 
         }
 
@@ -230,7 +218,8 @@ namespace Phy.Bot
             // A new random comment.
             this._canTradeThisBar = true;
             InitIndData();
-            this._indData = _engine.ProcessMarketData(_indData); // Reset shift for the new bar
+            _barsHeld = getMaxBarAge();
+            this._indData = _engine.ProcessMarketData(_indData,_barsHeld); // Reset shift for the new bar
             _signal.InitSignal();
             SyncSubsystems(this._indData);
             // Update app state with the latest data
@@ -258,6 +247,20 @@ namespace Phy.Bot
 
             // 3. The difference is the number of bars the trade has existed
             return currentBarIndex - entryBarIndex;
+        }
+
+        private int getMaxBarAge()
+        {
+
+            int maxAge = 0;
+            var botPositions = Positions.FindAll(_label, SymbolName);
+            foreach (var pos in botPositions)
+            {
+                int age = GetBarAge(pos);
+                if (age > maxAge)
+                    maxAge = age;
+            }
+            return maxAge;
         }
 
         private int GetActivePositionsCount(string label)
