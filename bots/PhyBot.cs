@@ -13,6 +13,7 @@ namespace Phy.Bot
     {
         private string _label = "PhyBot_Signal";
         private int _barsHeld = 0;
+        private int _currSpread = 0;
         private IndData _indData;
         private PhysicsEngine _engine;
         private CSignal _signal;
@@ -154,7 +155,7 @@ namespace Phy.Bot
                 Print($"Latest MFI: {data.Mfi[0]}");
         }
 
-        public bool HasTradedCurrentBarIncludingHistory(long magicNumber)
+        public bool HasTradedCurrentBarIncludingHistory(ulong magicNumber)
         {
             DateTime currentBarStartTime = Bars.OpenTimes.LastValue;
             string label = magicNumber.ToString();
@@ -216,13 +217,21 @@ namespace Phy.Bot
         protected override void OnBar()
         {
             // A new random comment.
-            this._canTradeThisBar = true;
+            
             InitIndData();
             _barsHeld = getMaxBarAge();
-            this._indData = _engine.ProcessMarketData(_indData,_barsHeld); // Reset shift for the new bar
+            _currSpread = (int)Math.Ceiling((Symbol.Spread / Symbol.PipSize));
+            this._indData = this._indData with { 
+                CurrSpread = _currSpread, 
+                BarsHeld = _barsHeld ,
+                CandleTraded = HasTradedCurrentBarIncludingHistory(this._indData.MagicNumber)
+                };
+                
+            this._indData = _engine.ProcessMarketData(this._indData); // Reset shift for the new bar
             _signal.InitSignal();
             SyncSubsystems(this._indData);
             // Update app state with the latest data
+            this._canTradeThisBar = true;
             onBarTask1();
 
         }
@@ -303,7 +312,13 @@ namespace Phy.Bot
             // Count OcNLY positions opened by this bot (using your "PhyLabel")
             var botPositions = Positions.FindAll(_label, SymbolName);
             int activeTradesCount = botPositions.Length;
-            if (activeTradesCount > 15) return;
+            if (activeTradesCount >= 15) return;
+
+            if (_indData.CurrSpread > _indData.SpreadLimit) // E.g., Max 3 pips spread
+            {
+                Print(">>> Veto: Spread too high.");
+                return;
+            }
             //################## CLOSE LOGIC ##################
             if (activeTradesCount > 0)
             {

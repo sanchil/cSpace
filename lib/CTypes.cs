@@ -85,7 +85,6 @@ public readonly record struct IndData
     public double HoldScore { get; init; }
     public double BayesianHoldScore { get; init; }
     public double NeuronHoldScore { get; init; }
-
     public double FractalAlignment { get; init; }
     public double MicroLots { get; init; }
     public double ConvictionFactor { get; init; }
@@ -101,6 +100,8 @@ public readonly record struct IndData
     public double Current_Period { get; init; }
     public double DBL_EPSILON { get; init; }
     public double SpreadLimit { get; init; }
+
+    public bool CandleTraded { get; init; }
     public int Digits { get; init; }
 }
 
