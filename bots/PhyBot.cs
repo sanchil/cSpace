@@ -327,14 +327,14 @@ namespace Phy.Bot
                         Print(">>> Closing SELL position due to BUY signal...");
                         ClosePosition(pos);
                     }
-                    else if (signal == SIG.CLOSE)
+                    else if ((signal == SIG.CLOSE) && (barsHeld > 5))
                     {
-                        Print(">>> Closing position due to CLOSE signal...");
+                        Print(">>> Closing position due to CLOSE signal and barsheld for more than 5...");
                         ClosePosition(pos);
                     }
-                    else if (hasCollapse)
+                    else if (hasCollapse && (barsHeld > 2))
                     {
-                        Print(">>> Closing position due to MARKET COLLAPSE signal...");
+                        Print(">>> Closing position due to MARKET COLLAPSE signal and barsHeld more than 2...");
                         ClosePosition(pos);
                     }
                 }
