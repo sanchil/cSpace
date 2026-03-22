@@ -7,13 +7,19 @@ public interface IUtils
 public class CUtils : IUtils
 {
     private DateTime _lastBar;
-    private readonly IndData _indData;
+    private IndData _indData;
 
     public CUtils(IndData indData)
     {
         _indData = indData;
         _lastBar = DateTime.MinValue;
     }
+
+    public void SetIndData(IndData data)
+    {
+        this._indData = data;
+    }
+
 
 
     public bool IsNewBar(DateTime currentBarTime)
@@ -27,15 +33,18 @@ public class CUtils : IUtils
     }
 
     //+------------------------------------------------------------------+
-//|                                                                  |
-//+------------------------------------------------------------------+
-public bool OppSignal(SIG sig1, SIG sig2) {
-   if((sig1 == SIG.BUY) && (sig2 == SIG.SELL)) {
-      return true;
-   }
-   if((sig1 == SIG.SELL) && (sig2 == SIG.BUY)) {
-      return true;
-   }
-   return false;
-}
+    //|                                                                  |
+    //+------------------------------------------------------------------+
+    public bool OppSignal(SIG sig1, SIG sig2)
+    {
+        if ((sig1 == SIG.BUY) && (sig2 == SIG.SELL))
+        {
+            return true;
+        }
+        if ((sig1 == SIG.SELL) && (sig2 == SIG.BUY))
+        {
+            return true;
+        }
+        return false;
+    }
 }

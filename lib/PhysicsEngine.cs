@@ -76,6 +76,7 @@ public interface IPhysicsEngine
 
     public int getHyperbolicCombinedScore(double b, double n, double f, double fra);
     public int getCobbDouglasCombinedScore(double b, double n, double f, double fra);
+    public int getMarketActionCombinedScore();
 
 }
 
@@ -89,6 +90,7 @@ public class PhysicsEngine : IPhysicsEngine
     private int SHIFT = 0;
     // Constructor
 
+    public Action<string> Log { get; set; }
 
 
     public PhysicsEngine(IndData indData, CStats stats, CUtils utils, CAppState appState)
@@ -105,6 +107,10 @@ public class PhysicsEngine : IPhysicsEngine
     {
         this._indData = data; // Update the internal state with the enriched data
         this.SHIFT = data.Shift;
+        // this._stats.SetIndData(data);
+        // this._utils.SetIndData(data);
+        // this._appState.SetIndData(data);
+
     }
 
     public IndData GetIndData() => _indData;
@@ -124,27 +130,32 @@ public class PhysicsEngine : IPhysicsEngine
         double atrInPips = atr / pipValue;
         double macroThreshold = atrInPips * 0.05;
 
-        // SetIndData(data);
+        double b = bayesianHoldScore(data.Ima30, data.Close, data.Open, data.TickVolume, data.BarsHeld, atr);
+        double n = neuronHoldScore(data.Ima30, data.Close, data.Open, data.TickVolume, data.BarsHeld, atr);
 
-        // return data with
-        // {
-        //     BayesianHoldScore = bayesianHoldScore(data.Ima30, data.Close, data.Open, data.TickVolume, data.BarsHeld, atr),
-        //     NeuronHoldScore = neuronHoldScore(data.Ima30, data.Close, data.Open, data.TickVolume, data.BarsHeld, atr),
-        //     BaseSlope = slowSlope,
-        //     FMSR_Raw = slopeAccelerationRatio(fastSlope, medSlope, slowSlope),
-        //     FractalAlignment = fractalAlignment(fastSlope, medSlope, slowSlope)
-        // };     
+        double f_RAW = slopeAccelerationRatio(fastSlope, medSlope, slowSlope);
+        double f_NORM = f_RAW / (1.0 + Math.Abs(f_RAW));
+        double fra = fractalAlignment(fastSlope, medSlope, slowSlope);
 
+        int cobbsDouglasAction = getCobbDouglasCombinedScore(b, n, f_NORM, fra);
+        int physicsAction = getHyperbolicCombinedScore(b, n, f_RAW, fra);
+        int marketAction = getMarketActionCombinedScore();
+        int spreadLimit = (int)atrScale(15, 120);
 
         IndData updatedData = data with
         {
-            BayesianHoldScore = bayesianHoldScore(data.Ima30, data.Close, data.Open, data.TickVolume, data.BarsHeld, atr),
-            NeuronHoldScore = neuronHoldScore(data.Ima30, data.Close, data.Open, data.TickVolume, data.BarsHeld, atr),
+            BayesianHoldScore = b,
+            NeuronHoldScore = n,
             BaseSlope = slowSlope,
-            FMSR_Raw = slopeAccelerationRatio(fastSlope, medSlope, slowSlope),
-            FractalAlignment = fractalAlignment(fastSlope, medSlope, slowSlope),
-            SpreadLimit = atrScale(15, 120)
+            FMSR_Raw = f_RAW,
+            FMSR_Norm = f_NORM,
+            FractalAlignment = fra,
+            SpreadLimit = spreadLimit,
+            CobbDouglasAction = cobbsDouglasAction,
+            HyperbolicAction = physicsAction,
+            MarketAction = marketAction
         };
+
         SetIndData(updatedData);
         return updatedData;
 
@@ -1167,6 +1178,56 @@ public class PhysicsEngine : IPhysicsEngine
         }
 
         return 0;
+    }
+
+    public int getMarketActionCombinedScore()
+    {
+
+
+        int SHIFT = _indData.Shift;
+        bool printMe = false;
+        // ############### BEGIN: Feature Vectors ############################################
+        FEATURE_VECTOR fV = getFeatureVector(_indData, SHIFT);
+
+        double globalIntensity = marketIntensity(fV);
+        //// --- 2. VECTOR CALCULATION (Magnitude & Direction) ---
+        double regimeMagnitude = marketRegime(fV);
+
+        const double GI_DORMANT = 3.0;       // Lowered from 3.5
+        const double GI_AWAKE = 4.5;         // Lowered from 5.5
+                                             //   const double GI_CLIMAX = 6.0;        // Kept at 6.0
+        const double GI_CLIMAX = 7.0;        // Increase to 7.0
+
+
+        const double REGIME_DORMANT = 2.0;    // Lowered from 2.5
+        const double REGIME_DEVELOPING = 3.0; // Lowered from 3.5
+        const double REGIME_AWAKE = 4.0;      // LOWERED FROM 5.0 (The key trigger!)
+                                              //   const double REGIME_CLIMAX= 7.0;     // Kept at 7.0 (We still want to avoid massive extremes)
+        const double REGIME_CLIMAX = 8.5;     // Increased at 8.5
+
+
+        bool mktState_Dormant = ((globalIntensity < GI_DORMANT) || (regimeMagnitude < REGIME_DEVELOPING));
+        bool mktState_Awake = ((globalIntensity >= GI_DORMANT) && (globalIntensity <= GI_CLIMAX) && (regimeMagnitude >= REGIME_DEVELOPING) && (regimeMagnitude <= REGIME_AWAKE));
+        bool mktState_Stretching = ((globalIntensity >= GI_DORMANT) && (globalIntensity <= GI_CLIMAX) && (regimeMagnitude > REGIME_AWAKE) && (regimeMagnitude <= REGIME_CLIMAX));
+        bool mktState_Climax = ((globalIntensity > GI_CLIMAX) || (regimeMagnitude > REGIME_CLIMAX));
+
+        string marketState = (mktState_Dormant)
+                             ? "DORMANT" : ((mktState_Awake)
+                                         ? "AWAKE" : ((mktState_Stretching)
+                                               ? "STRETCH" : ((mktState_Climax)
+                                                     ? "CLIMAX" : "NOSTATE")));
+
+
+        int marketAction = (mktState_Awake || mktState_Stretching)
+                           ? 1 : ((mktState_Dormant)
+                                ? 0 : -1);
+
+
+        if (printMe) Log?.Invoke($"[MARKET] Intensity: {globalIntensity:F2} | Regime: {regimeMagnitude:F2} | Market State: {marketState} | Market Action: {marketAction}");
+
+
+        return marketAction;
+
     }
 
 }

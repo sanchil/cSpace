@@ -73,23 +73,27 @@ public readonly record struct IndData
     public double CurrProfit { get; init; }
     public double MaxProfit { get; init; }
     public SIG TradePosition { get; init; }
+    public SIG AvgTradePosition { get; init; }
     public int CurrSpread { get; init; }
     public int Shift { get; init; }
     public int BarsHeld { get; init; }
     public double BaseSlope { get; init; }
 
     public double FMSR_Raw { get; init; }
+    public double FMSR_Norm { get; init; }
     // --- 3. PHYSICS SCORES ---
     public double HoldScore { get; init; }
     public double BayesianHoldScore { get; init; }
     public double NeuronHoldScore { get; init; }
-    public double FMSR_Norm { get; init; }
+
     public double FractalAlignment { get; init; }
     public double MicroLots { get; init; }
     public double ConvictionFactor { get; init; }
     public int PhysicsAction { get; init; }
+    public int CobbDouglasAction { get; init; }
+    public int HyperbolicAction { get; init; }
+    public int MarketAction { get; init; }
     public double PipValue { get; init; }
-
     public double Point { get; init; }
     public long _Period { get; init; }
     public double PipSize { get; init; }
@@ -147,7 +151,7 @@ public struct T_SIG
     public SIG layeredMomentumSIG { get; set; }
     public SIG macroWaveSIG { get; set; }
     public SIG microWaveSIG { get; set; }
-    public SIG slopeAnalyzerSIG { get; set; }   
+    public SIG slopeAnalyzerSIG { get; set; }
     public SIG waveTideSIG { get; set; }
     public SIG openSIG { get; set; }
     public SIG closeSIG { get; set; }
@@ -160,13 +164,19 @@ public struct T_SIG
 
 public class CAppState
 {
-    private readonly IndData _indData;
+    private IndData _indData;
     private readonly IUtils _utils;
     public CAppState(IndData indData, IUtils utils)
     {
         _indData = indData;
         _utils = utils;
     }
+
+    public void SetIndData(IndData data)
+    {
+        this._indData = data;
+    }
+
     // These will be saved automatically
     public double PeakSingleSlopePositive { get; set; } = 0;
     public double PeakSingleSlopeNegative { get; set; } = 0;

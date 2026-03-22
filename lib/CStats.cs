@@ -31,13 +31,18 @@ public interface IStats
 
 public class CStats : IStats
 {
-    private readonly IndData _indData;
+    private IndData _indData;
     private readonly IUtils _utils;
 
     public CStats(IndData indData, IUtils utils)
     {
-        _indData = indData;
-        _utils = utils;
+        this._indData = indData;
+        this._utils = utils;
+    }
+
+    public void SetIndData(IndData data)
+    {
+        this._indData = data;
     }
 
     // Implementation of GetDistribution
