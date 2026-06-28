@@ -14,6 +14,7 @@ namespace Phy.Bot
         private string _label = "PhyBot_Signal";
         private int _barsHeld = 0;
         private int _currSpread = 0;
+        private T_SIG _tSig;
         private IndData _indData;
         private PhysicsEngine _engine;
         private CSignal _signal;
@@ -102,7 +103,8 @@ namespace Phy.Bot
                 // cTrader .NET 6 standard way to get total minutes
                 _Period = GetMinutes(TimeFrame),
                 Current_Period = GetMinutes(TimeFrame),
-                Shift = 0
+                Shift = 0,
+                TotalOrders = Positions.Count(p => p.Label == _label && p.SymbolName == SymbolName)
             };
         }
 
@@ -179,31 +181,46 @@ namespace Phy.Bot
 
         protected override void OnStart()
         {
-            Print("Phy.Bot initialized. Connecting to Physics Engine...");
-            _stdClose = Indicators.StandardDeviation(Bars.ClosePrices, 20, MovingAverageType.Simple);
-            _stdOpen = Indicators.StandardDeviation(Bars.OpenPrices, 20, MovingAverageType.Simple);
-            _mfi = Indicators.MoneyFlowIndex(20);
-            _atr = Indicators.AverageTrueRange(20, MovingAverageType.Simple);
-            _adx = Indicators.AverageDirectionalMovementIndexRating(20);
-            _obv = Indicators.OnBalanceVolume(Bars.ClosePrices);
-            _rsi = Indicators.RelativeStrengthIndex(Bars.ClosePrices, 14);
-            _ima5 = Indicators.SimpleMovingAverage(Bars.ClosePrices, 5);
-            _ima14 = Indicators.SimpleMovingAverage(Bars.ClosePrices, 14);
-            _ima30 = Indicators.SimpleMovingAverage(Bars.ClosePrices, 30);
-            _ima60 = Indicators.SimpleMovingAverage(Bars.ClosePrices, 60);
-            _ima120 = Indicators.SimpleMovingAverage(Bars.ClosePrices, 120);
-            _ima240 = Indicators.SimpleMovingAverage(Bars.ClosePrices, 240);
-            _ima500 = Indicators.SimpleMovingAverage(Bars.ClosePrices, 500);
-            _avgStdDev = Indicators.SimpleMovingAverage(_stdClose.Result, 40);
+            try
+            {
 
-            InitIndData();
+                Print("Phy.Bot initialized. Connecting to Physics Engine...");
+                _stdClose = Indicators.StandardDeviation(Bars.ClosePrices, 20, MovingAverageType.Simple);
+                _stdOpen = Indicators.StandardDeviation(Bars.OpenPrices, 20, MovingAverageType.Simple);
+                _mfi = Indicators.MoneyFlowIndex(20);
+                _atr = Indicators.AverageTrueRange(20, MovingAverageType.Simple);
+                _adx = Indicators.AverageDirectionalMovementIndexRating(20);
+                _obv = Indicators.OnBalanceVolume(Bars.ClosePrices);
+                _rsi = Indicators.RelativeStrengthIndex(Bars.ClosePrices, 14);
+                _ima5 = Indicators.SimpleMovingAverage(Bars.ClosePrices, 5);
+                _ima14 = Indicators.SimpleMovingAverage(Bars.ClosePrices, 14);
+                _ima30 = Indicators.SimpleMovingAverage(Bars.ClosePrices, 30);
+                _ima60 = Indicators.SimpleMovingAverage(Bars.ClosePrices, 60);
+                _ima120 = Indicators.SimpleMovingAverage(Bars.ClosePrices, 120);
+                _ima240 = Indicators.SimpleMovingAverage(Bars.ClosePrices, 240);
+                _ima500 = Indicators.SimpleMovingAverage(Bars.ClosePrices, 500);
+                _avgStdDev = Indicators.SimpleMovingAverage(_stdClose.Result, 40);
 
-            _utils = new CUtils(_indData);
-            _stats = new CStats(_indData, _utils);
-            _appState = new CAppState(_indData, _utils);
-            _engine = new PhysicsEngine(_indData, _stats, _utils, _appState);
-            _engine.Log = this.Print;
-            _signal = new CSignal(_engine, _stats, _utils);
+                InitIndData();
+                // 3. Instantiate Subsystems (Check if _indData is valid)
+                if (_indData == null) throw new InvalidOperationException("Failed to initialize IndData.");
+
+                _utils = new CUtils(_indData);
+                _stats = new CStats(_indData, _utils);
+                _appState = new CAppState(_indData, _utils);
+                _engine = new PhysicsEngine(_indData, _stats, _utils, _appState);
+                _engine.Log = this.Print;
+                _signal = new CSignal(_engine, _stats, _utils);
+                _tSig = _signal.InitSignal();
+                Print("Phy.Bot initialized successfully.");
+
+            }
+            catch (Exception ex)
+            {
+                Print("CRITICAL ERROR during OnStart: {0}", ex.Message);
+                Stop(); // Stop the bot if initialization fails to prevent OnBar crashes
+            }
+
             // Inject cTrader's Print method for logging
         }
 
@@ -216,23 +233,41 @@ namespace Phy.Bot
 
         protected override void OnBar()
         {
+
+            if (_engine == null || _signal == null || _indData == null || _stats == null || _utils == null || _appState == null)
+            {
+                Print("OnBar skipped: Subsystems not initialized.");
+                return;
+            }
             // A new random comment.
-            
-            InitIndData();
-            _barsHeld = getMaxBarAge();
-            _currSpread = (int)Math.Ceiling((Symbol.Spread / Symbol.PipSize));
-            this._indData = this._indData with { 
-                CurrSpread = _currSpread, 
-                BarsHeld = _barsHeld ,
-                CandleTraded = HasTradedCurrentBarIncludingHistory(this._indData.MagicNumber)
+            try
+            {
+                InitIndData();
+                _barsHeld = getMaxBarAge();
+                _currSpread = (int)Math.Ceiling((Symbol.Spread / Symbol.PipSize));
+                this._indData = this._indData with
+                {
+                    CurrSpread = _currSpread,
+                    BarsHeld = _barsHeld,
+                    CandleTraded = HasTradedCurrentBarIncludingHistory(this._indData.MagicNumber)
                 };
-                
-            this._indData = _engine.ProcessMarketData(this._indData); // Reset shift for the new bar
-            _signal.InitSignal();
-            SyncSubsystems(this._indData);
-            // Update app state with the latest data
-            this._canTradeThisBar = true;
-            onBarTask1();
+
+                this._indData = _engine.ProcessMarketData(this._indData); // Reset shift for the new bar
+
+                SyncSubsystems(this._indData);
+                // Update app state with the latest data
+                this._canTradeThisBar = true;
+                _tSig = _signal.InitSecSignal(this._canTradeThisBar);
+                onBarTask1();
+            }
+            catch (NullReferenceException nre)
+            {
+                Print("NullRef in OnBar! Check if an indicator result is NaN or if a subsystem is null: {0}", nre.StackTrace);
+            }
+            catch (Exception ex)
+            {
+                Print("Error in OnBar: {0}", ex.Message);
+            }
 
         }
 
@@ -283,6 +318,7 @@ namespace Phy.Bot
         void onBarTask1()
         {
             SIG signal = _signal.GetSignal();
+            Print($"Generated signal: {_tSig.fuseFastSIG} (fast) and {_tSig.fuseSlowSIG} (slow)");
             SIG tradePosition = SIG.NOSIG;
             int barsHeld = 0;
 

@@ -11,7 +11,8 @@ public enum SIG
     CLOSE = 104, // 3
     TRADE = 105,// 4
     NOTRADE = 106,
-    NOSIG = 107 // 5
+    SIDEWAYS = 107, // 4
+    NOSIG = 108 // 5
 
 }
 
@@ -103,6 +104,8 @@ public readonly record struct IndData
 
     public bool CandleTraded { get; init; }
     public int Digits { get; init; }
+
+    public int TotalOrders { get; init; }
 }
 
 public struct FEATURE_VECTOR
@@ -145,7 +148,7 @@ public struct T_SIG
 {
     public SIG volMomentumSIG { get; set; }
     public SIG tradeSlopeSIG { get; set; }
-    public SIG slopeSIG { get; set; }
+    public SIG slope30SIG { get; set; }
     public SIG candleVolSIG { get; set; }
     public SIG physicsSIG { get; set; }
     public SIG singleCandleVolSIG { get; set; }
@@ -156,7 +159,21 @@ public struct T_SIG
     public SIG waveTideSIG { get; set; }
     public SIG openSIG { get; set; }
     public SIG closeSIG { get; set; }
+    public SIG baseSlopeSIG { get; set; }
+    public SIG fastSIG { get; set; }
+    public SIG fsig5 { get; set; }
+    public SIG fsig14 { get; set; }
+    public SIG fsig30 { get; set; }
+    public SIG fsig60 { get; set; }
+    public SIG fsig120 { get; set; }
+    public SIG fsig240 { get; set; }
+    public SIG fsig500 { get; set; }
 
+    public SIG cpScatterSIG { get; set; }
+    public SIG slopeCandle120SIG { get; set; }
+
+    public SIG fuseFastSIG { get; set; }
+    public SIG fuseSlowSIG { get; set; }
 
 }
 
@@ -187,4 +204,151 @@ public class CAppState
     public double PeakProfitNegative { get; set; } = 0;
     public int CurrentSignal { get; set; }
     public DateTime LastTradeTime { get; set; }
+}
+
+
+public class CircularBuffer<T>
+{
+    private readonly T[] _data;
+    private int _head;
+    private int _count;
+
+    // C# Properties replace your count(), capacity(), isFull() methods
+    public int Capacity { get; }
+    public int Count => _count;
+    public bool IsFull => _count == Capacity;
+    public bool IsEmpty => _count == 0;
+
+    public CircularBuffer(int capacity)
+    {
+        if (capacity <= 0) throw new ArgumentException("Capacity must be > 0");
+        Capacity = capacity;
+        _data = new T[capacity];
+        _head = 0;
+        _count = 0;
+    }
+
+
+    public void Push(T value)
+    {
+        _data[_head] = value;
+        _head = (_head + 1) % Capacity;
+        if (_count < Capacity) _count++;
+    }
+
+    public T Get(int logicalIndex)
+    {
+        if (_count == 0 || logicalIndex < 0 || logicalIndex >= _count)
+        {
+            return default; // Equivalent to (T)NULL in MQL4
+        }
+        int raw = ((_head - 1 - logicalIndex) + Capacity) % Capacity;
+        return _data[raw];
+    }
+
+    public T Newest => Get(0);
+    public T Oldest => Get(_count - 1);
+
+    public void Clear()
+    {
+        _head = 0;
+        _count = 0;
+        Array.Clear(_data, 0, _data.Length); // C# native way to wipe arrays
+    }
+
+    // Updates an existing value without advancing the buffer
+    public void Update(int logicalIndex, T value)
+    {
+        if (_count == 0 && logicalIndex == 0)
+        {
+            Push(value);
+            return;
+        }
+
+        if (logicalIndex < 0 || logicalIndex >= _count) return;
+
+        int raw = ((_head - 1 - logicalIndex) + Capacity) % Capacity;
+        _data[raw] = value;
+    }
+
+    public void UpdateNewest(T value) => Update(0, value);
+}
+
+public class SignalHistory : CircularBuffer<SIG>
+{
+    public SignalHistory(int capacity) : base(capacity) { }
+
+    // MQL4 & reference becomes C# 'out' keyword
+    public void Analyse(out int valueOut, out double weightOut, out double accuracyOut)
+    {
+        int buys = 0, sells = 0, notrades = 0, flips = 0;
+        int n = Count;
+
+        for (int i = 0; i < n; i++)
+        {
+            SIG s = Get(i);
+            if (s == SIG.BUY) buys++;
+            if (s == SIG.SELL) sells++;
+            if (s != SIG.BUY && s != SIG.SELL) notrades++;
+
+            // flip = signal changed from previous (i+1 is one older)
+            if (i < n - 1)
+            {
+                SIG prev = Get(i + 1);
+                if (s != prev && s != SIG.NOSIG && prev != SIG.NOSIG)
+                    flips++;
+            }
+        }
+
+        int total = buys + sells;
+        if (total == 0 || buys == sells)
+        {
+            valueOut = 0;
+            weightOut = 0.1;
+            accuracyOut = 0.5;
+            return;
+        }
+
+        // MathMax becomes Math.Max in C#
+        int dominant = Math.Max(buys, sells);
+        double biasRatio = (double)dominant / total;
+        double consistency = 1.0 - (double)flips / Math.Max(total - 1, 1);
+        int direction = (sells > buys) ? -1 : 1;
+
+        int magnitude = (biasRatio >= 0.75) ? 3 :
+                        (biasRatio >= 0.60) ? 2 : 1;
+
+        valueOut = direction * magnitude;
+        weightOut = 0.5 + (consistency * 2.5);
+        accuracyOut = 0.5 + (biasRatio - 0.5) * 0.5;
+    }
+
+    // MQL4 pointers become standard C# references
+    public double CalculateAgreement(SignalHistory otherBuffer)
+    {
+        // C# handles null checks cleanly
+        if (otherBuffer == null || this.Count != otherBuffer.Count || this.Count == 0)
+            return 0.5;
+
+        int n = Count;
+        int matches = 0;
+        int validComparisons = 0;
+
+        for (int i = 0; i < n; i++)
+        {
+            SIG sigA = this.Get(i);
+            SIG sigB = otherBuffer.Get(i);
+
+            if (sigA != SIG.NOSIG && sigB != SIG.NOSIG)
+            {
+                validComparisons++;
+                if (sigA == sigB) matches++;
+            }
+        }
+
+        if (validComparisons == 0) return 0.5;
+
+        double rawAgreement = (double)matches / validComparisons;
+        return Math.Abs(rawAgreement - 0.5) * 2.0;
+    }
 }

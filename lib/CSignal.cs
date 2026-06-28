@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.InteropServices;
 using System.Security.AccessControl;
 namespace Phy.Lib;
 
@@ -16,11 +17,45 @@ public interface ISignal
 
     public SIG CandleVolSIG(in double[] open, in double[] close, in double[] volume, in double atr, int period = 30, int SHIFT = 1);
     public SIG WaveTideSIG(in DTYPE fast, in DTYPE med, in DTYPE slow);
+    public T_SIG InitSignal();
+    public void InitHistory(in T_SIG tSIG, bool newBar);
+    public T_SIG InitSecSignal(bool newBar);
+    public SIG GetCloseSignal();
+    public SIG fuseFastSIG(in T_SIG tSIG, in bool newBar);
+    public SIG fuseSlowSIG(in T_SIG tSIG, in bool newBar);
 
 
+    public SIG fastSlowSIG(
+       in double fastSig,
+       in double slowSig,
+       double thresholdPct = 0.0005 // e.g., 0.0005 for 0.05% separation
+    );
 
+    //+------------------------------------------------------------------+
+    //| Kinetic Acceleration Engine (Unitless & Stationary)              |
+    //| Computes acceleration of a single signal line over two periods.  |
+    //+------------------------------------------------------------------+
+    public SIG kineticAccelerationSIG(
+       in double fastSlope,      // e.g., 3-period slope
+       in double slowSlope,      // e.g., 10-period slope
+       double tradeZoneCheck = 0.02, // do not trade if slow slope is flat-lining
+       double tradeCloseLimit = -0.08,   // The ratio limit which closes this trade call
+       string funcLabel = ""   // Which function makes this call
+    );
+
+    //+------------------------------------------------------------------+
+    //| fuseSIG — Final Weighted Fusion for Fast Signals in MQL4        |
+    //|                                                                  |
+    //| • Weights: Prioritize stronger signals (e.g., RSI=2.0, MA=1.0)  |
+    //| • HOLD: For weak agreements — reduces whipsaws in forex ranges   |
+    //| • Chains recursively: FuseSIG(FuseSIG(A,B),C)                   |
+    //| • MQL4-safe: Use in OnCalculate() or OnTick()                   |
+    //+------------------------------------------------------------------+
+    public SIG fuseSIG(SIG a, SIG b, double weightA = 1.0, double weightB = 1.0);
 
 }
+
+
 public class CSignal : ISignal
 {
     private PhysicsEngine _engine;
@@ -31,9 +66,25 @@ public class CSignal : ISignal
     private T_SIG _tSig;
 
     private static readonly double[] closeRVal = { 1.3, 1.2, 1.1, 1.0, 0.9 };
+
     private double m_peakRatio;  // class member
     private DateTime m_last_bar;
     private SIG m_cached;
+
+
+    SignalHistory slope30Hist,
+                  baseSlopeHist,
+                  fastHist,
+                  micWaveHist,
+                  macWaveHist,
+                  waveTideHist,
+                  slopeCandle120Hist,
+                  cpScatterHist,
+                  candleVolHist,
+                  volMomHist,
+                  slopeAnalyzerHist,
+                  tradeSlopeHist,
+                  momHist;
 
 
     public CSignal(PhysicsEngine engine, CStats stats, CUtils utils)
@@ -42,6 +93,23 @@ public class CSignal : ISignal
         _stats = stats;
         _utils = utils;
         _tacticalSignal = SIG.HOLD;
+        // CRITICAL: Instantiate all history buffers here!
+        // Replace '12' with your required minimum history period.
+
+        slope30Hist = new SignalHistory(12);
+        baseSlopeHist = new SignalHistory(12);
+        fastHist = new SignalHistory(12);
+        micWaveHist = new SignalHistory(12);
+        macWaveHist = new SignalHistory(12);
+        waveTideHist = new SignalHistory(12);
+        slopeCandle120Hist = new SignalHistory(12);
+        cpScatterHist = new SignalHistory(12);
+        candleVolHist = new SignalHistory(12);
+        volMomHist = new SignalHistory(12);
+        slopeAnalyzerHist = new SignalHistory(12);
+        tradeSlopeHist = new SignalHistory(12);
+        momHist = new SignalHistory(12);
+
         _tSig = InitSignal();
     }
 
@@ -98,9 +166,16 @@ public class CSignal : ISignal
     {
         T_SIG tSig = new T_SIG();
         IndData indData = _engine.GetIndData();
+        tSig.baseSlopeSIG = kineticAccelerationSIG(_stats.slopesVal(indData.Ima240).val1, _stats.slopesVal(indData.Ima240).val2,0.015,-0.06,"BASE_SLOPE");
+        tSig.slope30SIG = kineticAccelerationSIG(_stats.slopesVal(indData.Ima30).val1, _stats.slopesVal(indData.Ima30).val2,0.015,-0.2,"SLOPE_30");
+        tSig.fsig5 = fastSlowSIG(indData.Close[1], indData.Ima5[1], 0.0005);
+        tSig.fsig30 = fastSlowSIG(indData.Close[1], indData.Ima30[1], 0.0005);
+        tSig.fsig60 = fastSlowSIG(indData.Close[1], indData.Ima60[1], 0.0005);
+        tSig.fsig240 = fastSlowSIG(indData.Close[1], indData.Ima240[1], 0.0005);
+
         tSig.volMomentumSIG = VolatilityMomentumSIG();
         tSig.tradeSlopeSIG = TradeSlopeSIG(_stats.slopesVal(indData.Ima30), _stats.slopesVal(indData.Ima60));
-        tSig.slopeSIG = SlopeAnalyzerSIG(_stats.slopesVal(indData.Ima30));
+        tSig.slope30SIG = SlopeAnalyzerSIG(_stats.slopesVal(indData.Ima30));
         tSig.candleVolSIG = CandleVolSIG(indData.Open, indData.Close, indData.TickVolume, indData.Atr[indData.Shift]);
         tSig.singleCandleVolSIG = new SingleCandleVolSIG(_engine).Analyze(indData.Open, indData.Close, indData.TickVolume, indData.Atr[indData.Shift]);
         tSig.layeredMomentumSIG = LayeredMomentumSIG(indData.Ima30);
@@ -108,6 +183,52 @@ public class CSignal : ISignal
         tSig.macroWaveSIG = MacroWaveSIG(_stats.slopesVal(indData.Ima30), _stats.slopesVal(indData.Ima60));
         tSig.waveTideSIG = WaveTideSIG(_stats.slopesVal(indData.Ima30), _stats.slopesVal(indData.Ima60), _stats.slopesVal(indData.Ima120));
         tSig.physicsSIG = GetPhysicsSignal();
+
+        return tSig;
+    }
+
+
+
+
+    public void InitHistory(in T_SIG tSIG, bool newBar)
+    {
+        if (newBar)
+        {
+            slope30Hist.Push(tSIG.slope30SIG);
+            baseSlopeHist.Push(tSIG.baseSlopeSIG);
+            fastHist.Push(tSIG.fastSIG);
+            micWaveHist.Push(tSIG.microWaveSIG);
+            macWaveHist.Push(tSIG.macroWaveSIG);
+            waveTideHist.Push(tSIG.waveTideSIG);
+            slopeCandle120Hist.Push(tSIG.slopeCandle120SIG);
+            cpScatterHist.Push(tSIG.cpScatterSIG);
+            candleVolHist.Push(tSIG.candleVolSIG);
+            volMomHist.Push(tSIG.volMomentumSIG);
+            slopeAnalyzerHist.Push(tSIG.slopeAnalyzerSIG);
+            tradeSlopeHist.Push(tSIG.tradeSlopeSIG);
+            momHist.Push(tSIG.layeredMomentumSIG);
+
+        }
+    }
+
+    public T_SIG InitSecSignal(bool newBar)
+    {
+        T_SIG tSig = InitSignal();
+        InitHistory(tSig, newBar);
+
+        if (volMomHist != null && volMomHist.IsFull)
+        {
+            tSig.fuseFastSIG = fuseFastSIG(tSig, true);
+            tSig.fuseSlowSIG = fuseSlowSIG(tSig, true);
+        }
+        else
+        {
+            // Default state for the "Warm-up" period
+            tSig.fuseFastSIG = SIG.NOSIG;
+            tSig.fuseSlowSIG = SIG.NOSIG;
+        }
+
+        return tSig;
 
         return tSig;
     }
@@ -136,7 +257,8 @@ public class CSignal : ISignal
         // {
         //     return _tSig.microWaveSIG; // Fallback to volatility momentum if no specific close signal
         // }
-        if(_utils.OppSignal(_tSig.openSIG, _tSig.microWaveSIG)) {
+        if (_utils.OppSignal(_tSig.openSIG, _tSig.microWaveSIG))
+        {
             return SIG.CLOSE;
         }
         return SIG.NOSIG;
@@ -174,6 +296,18 @@ public class CSignal : ISignal
         IndData indData = _engine.GetIndData();
         if (indData.Time[0] == m_last_bar)
             return m_cached;
+
+
+
+        // --- THE GHOST PEAK FIX ---
+        // If the EA currently holds no positions, we MUST reset the peak.
+        double totalOrders = indData.TotalOrders;
+        if (totalOrders == 0 && m_peakRatio > 0)
+        {
+            m_peakRatio = 0;
+            m_cached = SIG.NOSIG;
+        }
+        // END OF GHOST PEAK FIX
 
         m_last_bar = indData.Time[0];
         double atr = indData.Atr[indData.Shift];
@@ -480,6 +614,259 @@ public class CSignal : ISignal
         return sig;
     }
 
+
+
+    public SIG fuseFastSIG(in T_SIG tSIG, in bool newBar)
+    {
+        SIG sig = SIG.NOSIG;
+        int ANALYZECOUNT = 4; // strictly fast components
+        int[] v;
+        double[] w, a, ind;
+
+        v = new int[ANALYZECOUNT];
+        w = new double[ANALYZECOUNT];
+        a = new double[ANALYZECOUNT];
+        ind = new double[ANALYZECOUNT];
+
+        double prob = -1;
+
+        if (volMomHist.IsFull)
+        {
+            // 1. Kinetic Energy (Fast Volatility)
+            volMomHist.Analyse(out v[0], out w[0], out a[0]);
+            ind[0] = 1.0; // Independent Dimension (Energy)
+
+            // 2. Current Candle Force (Volume)
+            candleVolHist.Analyse(out v[1], out w[1], out a[1]);
+            ind[1] = 1.0; // Independent Dimension (Volume)
+
+            // 3. Fast Price Action / MA Crossover
+            fastHist.Analyse(out v[2], out w[2], out a[2]);
+            ind[2] = 0.5; // Shared Dimension (Price)
+
+            // 4. Micro Wave Structure
+            micWaveHist.Analyse(out v[3], out w[3], out a[3]);
+            ind[3] = 0.5; // Shared Dimension (Price)
+
+            // Apply the static independence discount BEFORE fusion
+            for (int i = 0; i < ANALYZECOUNT; i++)
+            {
+                w[i] = w[i] * ind[i];
+            }
+
+            prob = _engine.fuseProbability(v, w, a, ANALYZECOUNT);
+
+            //   Print("FAST Ensemble — count: ", volMomHist.count(), " Prob: ", NormalizeDouble(prob,4));
+
+            if (prob >= 0.70) return SIG.BUY;  // Tightened to 0.70 for Fast noise
+            if (prob <= 0.30) return SIG.SELL;
+            return SIG.NOTRADE;
+        }
+        return sig;
+    }
+
+    public SIG fuseSlowSIG(in T_SIG tSIG, in bool newBar)
+    {
+        SIG sig = SIG.NOSIG;
+        int ANALYZECOUNT = 7; // strictly macro/structural components
+
+        int[] v;
+        double[] w, a, ind;
+
+        v = new int[ANALYZECOUNT];
+        w = new double[ANALYZECOUNT];
+        a = new double[ANALYZECOUNT];
+        ind = new double[ANALYZECOUNT];
+
+        double prob = -1;
+
+        if (volMomHist.IsFull)
+        {
+            // 1. The Core Trend (Slope 30)
+            slope30Hist.Analyse(out v[0], out w[0], out a[0]);
+            ind[0] = 0.4; // Heavily correlated with other MAs
+
+            // 2. The Macro Tide (Base Slope)
+            baseSlopeHist.Analyse(out v[1], out w[1], out a[1]);
+            ind[1] = 0.4; // Heavily correlated with other MAs
+
+            // 3. Trade Slope / Trajectory
+            tradeSlopeHist.Analyse(out v[2], out w[2], out a[2]);
+            ind[2] = 0.4; // Heavily correlated with other MAs
+
+            // 4. Macro Wave Alignment
+            macWaveHist.Analyse(out v[3], out w[3], out a[3]);
+            ind[3] = 0.5; // Alignment Geometry
+
+            // 5. Wave vs Tide Harmony
+            waveTideHist.Analyse(out v[4], out w[4], out a[4]);
+            ind[4] = 0.5; // Alignment Geometry
+
+            // 6. Macro Scatter/Volatility Expansion
+            cpScatterHist.Analyse(out v[5], out w[5], out a[5]);
+            ind[5] = 1.0; // Independent (Variance/Distribution)
+
+            // 7. Slope Analyzer (The overarching meta-state)
+            slopeAnalyzerHist.Analyse(out v[6], out w[6], out a[6]);
+            ind[6] = 1.0; // Independent (Meta-logic)
+
+            // Apply the static independence discount BEFORE fusion
+            for (int i = 0; i < ANALYZECOUNT; i++)
+            {
+                w[i] = w[i] * ind[i];
+            }
+
+            prob = _engine.fuseProbability(v, w, a, ANALYZECOUNT); // Now properly fuses all 7!
+
+            // Print("SLOW Ensemble — count: ", volMomHist.count(), " Prob: ", NormalizeDouble(prob, 4));
+
+            if (prob >= 0.65) return SIG.BUY;
+            if (prob <= 0.35) return SIG.SELL;
+            return SIG.NOTRADE;
+        }
+        return sig;
+    }
+
+    //+------------------------------------------------------------------+
+    //| Universal PPO Structural Signal                                  |
+    //| Inputs can be Prices, MAs, or zero-centered Oscillators.         |
+    //+------------------------------------------------------------------+
+    //SAN_SIGNAL SanSignals::universalFastSlowSIG(
+    public SIG fastSlowSIG(
+       in double fastSig,
+       in double slowSig,
+       double thresholdPct = 0.0005 // e.g., 0.0005 for 0.05% separation
+    )
+    {
+        // 1. Guard against division by zero (Epsilon check)
+        if (Math.Abs(slowSig) < 0.000001)
+        {
+            // If the slow baseline is effectively zero, we look at raw delta
+            if (fastSig > 0) return SIG.BUY;
+            if (fastSig < 0) return SIG.SELL;
+            return SIG.SIDEWAYS;
+        }
+
+        // 2. The Universal PPO Math (Absolute Denominator)
+        double ppo = (fastSig - slowSig) / Math.Abs(slowSig);
+
+        // 3. Directional Gates
+        //if(ppo > thresholdPct)  return SAN_SIGNAL::BUY;
+        //if(ppo < -thresholdPct) return SAN_SIGNAL::SELL;
+
+        if (ppo > 0) return SIG.BUY;
+        if (ppo < 0) return SIG.SELL;
+        //  if(ppo == 0) return SAN_SIGNAL::SIDEWAYS;
+
+        return SIG.SIDEWAYS; // Caught in the noise band
+    }
+
+    //+------------------------------------------------------------------+
+    //| Kinetic Acceleration Engine (Unitless & Stationary)              |
+    //| Computes acceleration of a single signal line over two periods.  |
+    //+------------------------------------------------------------------+
+    public SIG kineticAccelerationSIG(
+       in double fastSlope,      // e.g., 3-period slope
+       in double slowSlope,      // e.g., 10-period slope
+       double tradeZoneCheck = 0.02, // do not trade if slow slope is flat-lining
+       double tradeCloseLimit = -0.08,   // The ratio limit which closes this trade call
+       string funcLabel = ""    // Which function makes this call
+    )
+    {
+        double absSlow = Math.Abs(slowSlope);
+
+        //const double TRADE_OPEN_LIMIT = -0.05;
+        //const double TRADE_CLOSE_LIMIT = -0.08;
+
+        const double TRADE_OPEN_LIMIT = -0.05;
+        double TRADE_CLOSE_LIMIT = tradeCloseLimit;
+
+        double ratioPrint = (fastSlope - slowSlope) / (slowSlope + 0.000001);
+        //    Print("SLOPERATIO-"+funcLabel+": "+ NormalizeDouble(ratioPrint,4)+" absSlow: "+NormalizeDouble(absSlow,4)+" fast: "+NormalizeDouble(fastSlope,4));
+
+        // 1. Zero-Divide Guard (Hard safety limit to prevent MQL4 crashes)
+        if (absSlow < 0.000001)
+        {
+            //return SAN_SIGNAL::NOSIG;
+            return SIG.CLOSE;
+        }
+        //Print("STEP 1");
+        // 2. The Macro Flat-Line Filter (The Kinetic Floor)
+        // If the macro trend lacks basic kinetic energy, the acceleration ratio is meaningless.
+        if (absSlow <= tradeZoneCheck)
+        {
+            //return SAN_SIGNAL::NOSIG;
+            return SIG.CLOSE;
+        }
+        //Print("STEP 2");
+
+        // 3. The Acceleration Ratio
+        double ratio = (fastSlope - slowSlope) / slowSlope;
+        //  Print("SLOPERATIO: "+ ratio+" absSlow: "+absSlow+" fast: "+fastSlope);
+        //Print("[BOOLCHK]: Zero Chk: "+(absSlow < 0.000001)+" TradeZone Check: "+(absSlow <= tradeZoneCheck)+" absSlow: "+absSlow+" tradeZoneCheck: "+tradeZoneCheck);
+
+        // 4. The Execution Gates
+        if (ratio >= TRADE_OPEN_LIMIT)
+        {
+            // Momentum is accelerating in the direction of the fast slope
+            if (fastSlope > 0.0) return SIG.BUY;
+            if (fastSlope < 0.0) return SIG.SELL;
+        }
+        //Print("STEP 3");
+        //if((ratio < TRADE_OPEN_LIMIT)&&(ratio>=TRADE_CLOSE_LIMIT)) {
+        //   if(slowSlope > 0.0) return SAN_SIGNAL::BUY;
+        //   if(slowSlope < 0.0) return SAN_SIGNAL::SELL;
+        //}
+
+        if (ratio < TRADE_CLOSE_LIMIT)
+        {
+            //Momentum is heavily decelerating or reversing (Kill switch)
+            return SIG.CLOSE;
+            //// Return no sig on loss of momentum instead of close.
+            //// This is an experiment because loss of momentum is usually temporary
+            //// Close on loss of momenttum seems to be capturing only losses.
+            //// Instead close only when the slope is flattening.
+            // Note:
+            // Must return close on less than Trade close limit
+            // It is better to train and fine tune the trade close limit
+            //  leaving close on flat is not a great idea
+            // definitely close trades on flat. That must be prune all losses
+            // however for profit booking we must plan our exits based on momentum losses
+
+            //return SAN_SIGNAL::NOSIG;
+        }
+        //Print("STEP 4");
+
+
+        // 5. The "No Man's Land" (-0.20 to -0.10).
+        // Mild deceleration. We hold current trades but don't force a close.
+        return SIG.NOSIG;
+    }
+
+    //+------------------------------------------------------------------+
+    //| fuseSIG — Final Weighted Fusion for Fast Signals in MQL4        |
+    //|                                                                  |
+    //| • Weights: Prioritize stronger signals (e.g., RSI=2.0, MA=1.0)  |
+    //| • HOLD: For weak agreements — reduces whipsaws in forex ranges   |
+    //| • Chains recursively: FuseSIG(FuseSIG(A,B),C)                   |
+    //| • MQL4-safe: Use in OnCalculate() or OnTick()                   |
+    //+------------------------------------------------------------------+
+    public SIG fuseSIG(SIG a, SIG b, double weightA = 1.0, double weightB = 1.0)
+    {
+        // Convert to scores: BUY= +weight, SELL= -weight, HOLD/NOSIG=0
+        double scoreA = (a == SIG.BUY) ? weightA : (a == SIG.SELL) ? -weightA : 0.0;
+        double scoreB = (b == SIG.BUY) ? weightB : (b == SIG.SELL) ? -weightB : 0.0;
+
+        double total = scoreA + scoreB;
+        double absTotal = Math.Abs(total);
+
+        if (absTotal > 0.5)  // Strong consensus
+            return (total > 0) ? SIG.BUY : SIG.SELL;
+        if (absTotal < 0.1)  // Weak or conflicting
+            return SIG.HOLD;     // Hold position or wait
+        return SIG.CLOSE;       // Clear conflict
+    }
+
 }
 
 
@@ -543,7 +930,6 @@ class SingleCandleVolSIG
 
         return cached;
     }
-
 
 }
 

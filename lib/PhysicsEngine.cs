@@ -18,7 +18,7 @@ public interface IPhysicsEngine
 {
     public IndData GetIndData();
     public void SetIndData(IndData data);
-    
+
     public IndData ProcessMarketData(IndData data);
 
     public double atrKinetic();
@@ -75,6 +75,37 @@ public interface IPhysicsEngine
    double atr,
    bool useOverallForce = true
    );
+
+
+    //+------------------------------------------------------------------+
+    //|                                                                  |
+    //+------------------------------------------------------------------+
+    public double fuseProbability(
+       in int[] values,      // -3,-2,-1, 0, +1,+2,+3
+       in double[] weights,
+       in double[] accuracies,
+       int count,
+       double prior = 0.5,
+       int maxValue = 3       // defines the normalisation scale
+    );
+
+    public double universalScore(
+   double fast,
+   double slow,
+   double baselineScale,  // <-- THE SCALER
+   double sensitivity = 2.0
+);
+
+    //+------------------------------------------------------------------+
+    //| Universal Dimensionless Kinetic Score                            |
+    //| Returns a strictly bounded [-1.0, 1.0] directional probability   |
+    //| baselineScale = ATR, Avg Volume, etc.                            |
+    //+------------------------------------------------------------------+
+    public double arcTanScore(
+       double fast,
+       double slow
+    );
+    public double arcTanProbability(double fast, double slow);
 
     public int getHyperbolicCombinedScore(double b, double n, double f, double fra);
     public int getCobbDouglasCombinedScore(double b, double n, double f, double fra);
@@ -1011,6 +1042,50 @@ public class PhysicsEngine : IPhysicsEngine
 
 
 
+    //+------------------------------------------------------------------+
+    //|                                                                  |
+    //+------------------------------------------------------------------+
+    public double fuseProbability(
+       in int[] values,      // -3,-2,-1, 0, +1,+2,+3
+       in double[] weights,
+       in double[] accuracies,
+       int count,
+       double prior = 0.5,
+       int maxValue = 3       // defines the normalisation scale
+    )
+    {
+        if (prior <= 0.0 || prior >= 1.0) return prior;
+
+        // Normalise weights over contributing points only
+        double weightSum = 0.0;
+        for (int i = 0; i < count; i++)
+            if (values[i] != 0) weightSum += weights[i];
+        double normFactor = (weightSum > 0.0) ? (double)count / weightSum : 1.0;
+
+        // Start from prior
+        double runningLogit = Math.Log(prior / (1.0 - prior));
+
+        for (int i = 0; i < count; i++)
+        {
+            if (values[i] == 0) continue;   // abstain — no contribution
+
+            // Normalise magnitude to [-1.0, +1.0]
+            double normValue = (double)values[i] / (double)maxValue;
+
+            double w = weights[i] * normFactor;
+            double acc = Math.Max(0.01, Math.Min(0.99, accuracies[i]));
+            double signalLogOdds = Math.Log(acc / (1.0 - acc));
+
+            runningLogit += normValue * w * signalLogOdds;
+
+            //              ─────────
+            //              now a double in [-1.0, +1.0]
+            //              direction AND magnitude in one number
+        }
+
+        return 1.0 / (1.0 + Math.Exp(-runningLogit));
+    }
+
 
     //+------------------------------------------------------------------+
     //| NEURON HOLD SCORE — ALIGNED WITH CONTINUOUS fMSR                |
@@ -1230,6 +1305,105 @@ public class PhysicsEngine : IPhysicsEngine
 
         return marketAction;
 
+    }
+
+
+    //+------------------------------------------------------------------+
+    //| Universal Dimensionless Kinetic Score                            |
+    //| Returns a strictly bounded [-1.0, 1.0] directional probability   |
+    //| baselineScale = ATR, Avg Volume, etc.                            |
+    //+------------------------------------------------------------------+
+    public double universalScore(
+       double fast,
+       double slow,
+       double baselineScale,  // <-- THE SCALER
+       double sensitivity = 2.0
+    )
+    {
+
+        // 1. Conflict Protection (Directional Harmony)
+        if (fast * slow < 0) return 0.0;
+
+        // 2. Define the Structural Floor (e.g., 5% of the macro scale)
+        // If passing ATR, this is 5% of the ATR. If passing Volume, 5% of Avg Vol.
+        double noiseFloor = baselineScale * 0.05;
+
+        double absFast = Math.Abs(fast);
+        double absSlow = Math.Abs(slow);
+
+
+
+        // 3. Absolute Dormancy Check
+        // If BOTH waves are trapped under the noise floor, output exactly 0.0
+        if (absFast < noiseFloor && absSlow < noiseFloor) return 0.0;
+
+        // 4. The Safe Denominator
+        // If the slow macro tide is totally dead (below noise floor), but the fast
+        // wave is breaking out, we divide by the noiseFloor to prevent Infinity.
+        double safeSlow = Math.Max(absSlow, noiseFloor);
+
+        // 5. The Dimensionless Shifted Ratio
+        double ratio = absFast / safeSlow;
+
+        double shiftedRatio = ratio - 1.0;
+
+        // 6. The Non-Linear Squash (Tanh)
+        // Tanh naturally bounds the output to a max of 1.0, regardless of how big the ratio gets
+        double intensity = Math.Tanh(shiftedRatio * sensitivity);
+
+        // 7. Re-attach the Direction Vector
+        int direction = (fast >= 0) ? 1 : -1;
+
+        return intensity * direction;
+    }
+
+
+    //+------------------------------------------------------------------+
+    //| Universal Dimensionless Kinetic Score                            |
+    //| Returns a strictly bounded [-1.0, 1.0] directional probability   |
+    //| baselineScale = ATR, Avg Volume, etc.                            |
+    //+------------------------------------------------------------------+
+    public double arcTanScore(
+       double fast,
+       double slow
+    )
+    {
+
+        // atan2 handles all the negative/positive zero-division nightmares automatically.
+        // It returns the angle in radians (-PI to +PI)
+        double angleRadians = Math.Atan2(fast, slow);
+        double angleDegrees = angleRadians * 180.0 / Math.PI;
+
+        return angleDegrees;
+    }
+
+    //+------------------------------------------------------------------+
+    //| Phase Space Dimensionless Score                                  |
+    //| Maps the ArcTan2 angle into a [-1.0, 1.0] intensity score        |
+    //+------------------------------------------------------------------+
+    public double arcTanProbability(double fast, double slow)
+    {
+
+        // 1. Get the angle in Radians (Important: MathSin requires radians)
+        double angleRadians = Math.Atan2(fast, slow);
+        double angleDegrees = angleRadians * 180.0 / Math.PI;
+
+        // 2. Quadrant 1: Bullish Harmony (0 to +90 degrees)
+        if (angleDegrees > 0.0 && angleDegrees < 90.0)
+        {
+            // Peaks at exactly 1.0 when angle is 45 degrees
+            return Math.Sin(angleRadians * 2.0);
+        }
+
+        // 3. Quadrant 3: Bearish Harmony (-90 to -180 degrees)
+        if (angleDegrees < -90.0 && angleDegrees > -180.0)
+        {
+            // MathSin(2 * -135deg) is +1.0, so we invert it to -1.0 for Bears
+            return -Math.Sin(angleRadians * 2.0);
+        }
+
+        // 4. Quadrants 2 & 4: Conflict (Opposing signs)
+        return 0.0;
     }
 
 }
